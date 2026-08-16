@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+/* =========================================================
+   POP GAMING HIGH-CONTRAST LIGHT MODE & SUNLIGHT READABILITY
+   ========================================================= */
+
+.light-theme {
+  --theme-bg-main: #f8fafc;
+  --theme-bg-card: #ffffff;
+  --theme-bg-card-subtle: #f1f5f9;
+  --theme-text-title: #090d16;
+  --theme-text-body: #1e293b;
+  --theme-text-muted: #475569;
+  --theme-border: #cbd5e1;
+  --theme-border-subtle: #e2e8f0;
+  
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.light-theme .bg-neutral-950 {
+  background-color: #f8fafc !important;
+}
+
+.light-theme .bg-neutral-900 {
+  background-color: #ffffff !important;
+}
+
+.light-theme .bg-neutral-950\/90,
+.light-theme .bg-neutral-950\/95,
+.light-theme .bg-neutral-900\/90,
+.light-theme .bg-neutral-900\/95 {
+  background-color: rgba(255, 255, 255, 0.96) !important;
+}
+
+.light-theme .bg-neutral-900\/70,
+.light-theme .bg-neutral-900\/80,
+.light-theme .bg-neutral-900\/60,
+.light-theme .bg-neutral-900\/50,
+.light-theme .bg-neutral-900\/40 {
+  background-color: #f1f5f9 !important;
+}
+
+.light-theme .bg-neutral-800,
+.light-theme .bg-neutral-800\/90,
+.light-theme .bg-neutral-800\/80,
+.light-theme .bg-neutral-800\/60,
+.light-theme .bg-neutral-800\/50,
+.light-theme .bg-neutral-800\/40 {
+  background-color: #e2e8f0 !important;
+}
+
+.light-theme .text-white {
+  color: #090d16 !important;
+}
+
+.light-theme .text-neutral-100 {
+  color: #0f172a !important;
+}
+
+.light-theme .text-neutral-200 {
+  color: #1e293b !important;
+}
+
+.light-theme .text-neutral-300 {
+  color: #334155 !important;
+}
+
+.light-theme .text-neutral-400 {
+  color: #475569 !important;
+}
+
+.light-theme .text-neutral-500 {
+  color: #64748b !important;
+}
+
+.light-theme .border-neutral-800,
+.light-theme .border-neutral-800\/80,
+.light-theme .border-neutral-800\/60,
+.light-theme .border-neutral-800\/50,
+.light-theme .border-neutral-800\/40,
+.light-theme .border-neutral-900,
+.light-theme .border-neutral-700,
+.light-theme .border-neutral-700\/80 {
+  border-color: #cbd5e1 !important;
+}
+
+.light-theme .divide-neutral-800,
+.light-theme .divide-neutral-800\/60,
+.light-theme .divide-neutral-800\/80,
+.light-theme .divide-neutral-900 {
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme .hover\:bg-neutral-800:hover,
+.light-theme .hover\:bg-neutral-800\/90:hover,
+.light-theme .hover\:bg-neutral-800\/80:hover {
+  background-color: #e2e8f0 !important;
+}
+
+.light-theme .hover\:bg-neutral-900:hover,
+.light-theme .hover\:bg-neutral-900\/80:hover,
+.light-theme .hover\:bg-neutral-900\/90:hover {
+  background-color: #f1f5f9 !important;
+}
+
+.light-theme .shadow-2xl,
+.light-theme .shadow-xl {
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.07), 0 8px 10px -6px rgba(15, 23, 42, 0.04) !important;
+}
+
+.light-theme input,
+.light-theme select,
+.light-theme textarea {
+  color: #0f172a !important;
+}
+
+.light-theme input::placeholder,
+.light-theme textarea::placeholder {
+  color: #94a3b8 !important;
+}

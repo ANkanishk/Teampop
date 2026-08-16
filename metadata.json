@@ -1,0 +1,7 @@
+{
+  "name": "POP Gaming Tournament Platform",
+  "description": "Production-grade Free Fire esports tournament platform with real-time match lobbies, automated BR/CS reward calculation engines, UPI payment verification, and comprehensive Admin management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
