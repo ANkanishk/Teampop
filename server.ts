@@ -117,11 +117,13 @@ function initMailTransporter(config?: Partial<SmtpRuntimeConfig>): { transporter
     try {
       // Clean app password for Gmail (stripping any accidental inner spaces)
       const cleanPass = pass.trim().replace(/\s+/g, '');
-      
-      // If host is Gmail, use nodemailer's built-in gmail service with TLS fallback
-      if (host.includes('gmail') || user.includes('@gmail.com')) {
+      const isGmail = (host && host.includes('gmail')) || user.includes('@gmail.com');
+
+      if (isGmail) {
         transporter = nodemailer.createTransport({
-          service: 'gmail',
+          host: 'smtp.gmail.com',
+          port: 465,
+          secure: true,
           auth: {
             user: user.trim(),
             pass: cleanPass,
@@ -146,10 +148,10 @@ function initMailTransporter(config?: Partial<SmtpRuntimeConfig>): { transporter
       }
 
       isSimulated = false;
-      console.log(`[Email Engine] Connected Live SMTP for ${user} (service/host: ${host})`);
+      console.log(`[Email Engine] Configured Live SMTP for ${user} (host: ${isGmail ? 'smtp.gmail.com' : host})`);
       return { transporter, simulated: false };
     } catch (e) {
-      console.error('[Email Engine] Live SMTP failed, falling back to simulated mode', e);
+      console.error('[Email Engine] Live SMTP setup failed, falling back to simulated mode', e);
     }
   }
 
@@ -410,6 +412,49 @@ async function startServer() {
       fromAddress: activeSmtpConfig.from || 'POP Gaming Tournaments <wepopearn@gmail.com>',
       totalDispatched: notificationLogs.length,
     });
+  });
+
+  // API Route: Verify SMTP connection test
+  app.post('/api/notifications/verify-smtp', async (req: Request, res: Response) => {
+    try {
+      const { user, pass, host, port } = req.body;
+      const targetUser = (user ? String(user).trim() : activeSmtpConfig.user) || 'wepopearn@gmail.com';
+      const targetPass = (pass ? String(pass).trim().replace(/\s+/g, '') : activeSmtpConfig.pass.replace(/\s+/g, '')) || 'uqrddnyogxitghkr';
+      const targetHost = (host ? String(host).trim() : activeSmtpConfig.host) || 'smtp.gmail.com';
+      const targetPort = port ? parseInt(port, 10) : 465;
+
+      const isGmail = targetHost.includes('gmail') || targetUser.includes('@gmail.com');
+      const testMailer = nodemailer.createTransport({
+        host: isGmail ? 'smtp.gmail.com' : targetHost,
+        port: targetPort,
+        secure: targetPort === 465,
+        auth: {
+          user: targetUser,
+          pass: targetPass,
+        },
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+
+      await testMailer.verify();
+
+      res.json({
+        success: true,
+        message: `✅ SMTP Connection Verified! Google SMTP server accepted login for ${targetUser}.`,
+        user: targetUser,
+        host: isGmail ? 'smtp.gmail.com' : targetHost,
+        port: targetPort,
+      });
+    } catch (err: any) {
+      console.error('[SMTP Verification Error]', err);
+      res.status(400).json({
+        success: false,
+        error: err.message || 'SMTP handshake failed',
+        code: err.code,
+        response: err.response,
+      });
+    }
   });
 
   // API Route: Configure dynamic SMTP / Gmail credentials from Admin Panel

@@ -7,6 +7,7 @@ import {
   Plus, 
   Minus, 
   CheckCircle2, 
+  XCircle, 
   AlertCircle, 
   Clock, 
   DollarSign, 
@@ -17,10 +18,14 @@ import {
   FileText, 
   History,
   TrendingUp,
-  RefreshCw
+  RefreshCw,
+  Copy,
+  Check,
+  CreditCard,
+  CheckCheck
 } from 'lucide-react';
 import { useTournaments } from '../context/TournamentContext';
-import { WalletTransactionType } from '../types';
+import { WalletTransactionType, WalletTransaction } from '../types';
 
 export const AdminUserWalletsManager: React.FC = () => {
   const { 
@@ -28,14 +33,22 @@ export const AdminUserWalletsManager: React.FC = () => {
     registrations, 
     withdrawals, 
     registeredUsers,
-    adminAdjustUserWallet 
+    adminAdjustUserWallet,
+    approveDirectDeposit,
+    rejectDirectDeposit,
   } = useTournaments();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUserEmail, setSelectedUserEmail] = useState('');
   const [selectedUserName, setSelectedUserName] = useState('');
   const [selectedUserUid, setSelectedUserUid] = useState('');
+  const [copiedUtr, setCopiedUtr] = useState<string | null>(null);
   
+  // Pending Deposit Action state
+  const [processingTxId, setProcessingTxId] = useState<string | null>(null);
+  const [rejectModalTx, setRejectModalTx] = useState<WalletTransaction | null>(null);
+  const [rejectReason, setRejectReason] = useState('Payment not received in UPI statement');
+
   // Modal / Form state
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [adjustAmount, setAdjustAmount] = useState('100');
@@ -44,6 +57,55 @@ export const AdminUserWalletsManager: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Extract pending deposits
+  const pendingDeposits = walletTransactions.filter(
+    (tx) => tx.type === 'DEPOSIT' && tx.status === 'PENDING'
+  );
+
+  const handleCopyUtr = (utr: string) => {
+    navigator.clipboard.writeText(utr);
+    setCopiedUtr(utr);
+    setTimeout(() => setCopiedUtr(null), 2000);
+  };
+
+  const handleApproveDeposit = async (txId: string) => {
+    setProcessingTxId(txId);
+    setActionSuccess(null);
+    setActionError(null);
+    try {
+      const res = await approveDirectDeposit(txId, 'Approved by Admin');
+      if (res.success) {
+        setActionSuccess(res.message || 'Deposit successfully approved and credited to player wallet!');
+        setTimeout(() => setActionSuccess(null), 3500);
+      } else {
+        setActionError(res.message || 'Failed to approve deposit');
+      }
+    } catch (e: any) {
+      setActionError(e.message || 'Error approving deposit');
+    } finally {
+      setProcessingTxId(null);
+    }
+  };
+
+  const handleRejectDeposit = async () => {
+    if (!rejectModalTx) return;
+    setProcessingTxId(rejectModalTx.id);
+    try {
+      const res = await rejectDirectDeposit(rejectModalTx.id, rejectReason);
+      if (res.success) {
+        setActionSuccess(res.message || 'Deposit transaction rejected');
+        setRejectModalTx(null);
+        setTimeout(() => setActionSuccess(null), 3500);
+      } else {
+        setActionError(res.message || 'Failed to reject deposit');
+      }
+    } catch (e: any) {
+      setActionError(e.message || 'Error rejecting deposit');
+    } finally {
+      setProcessingTxId(null);
+    }
+  };
 
   // Extract unique players from registrations and wallet transactions
   const userMap = new Map<string, {
@@ -113,16 +175,18 @@ export const AdminUserWalletsManager: React.FC = () => {
       });
     }
     const u = userMap.get(email)!;
-    if (tx.type === 'PRIZE_WON' || tx.type === 'BONUS') {
-      u.totalWinnings += tx.amount;
-    } else if (tx.type === 'DEPOSIT') {
-      u.totalDeposits += tx.amount;
-    } else if (tx.type === 'ADMIN_CREDIT') {
-      u.totalWinnings += tx.amount;
-      u.adjustmentCount += 1;
-    } else if (tx.type === 'ADMIN_DEBIT' || tx.type === 'PENALTY') {
-      u.totalWinnings = Math.max(0, u.totalWinnings - tx.amount);
-      u.adjustmentCount += 1;
+    if (tx.status === 'COMPLETED') {
+      if (tx.type === 'PRIZE_WON' || tx.type === 'BONUS') {
+        u.totalWinnings += tx.amount;
+      } else if (tx.type === 'DEPOSIT') {
+        u.totalDeposits += tx.amount;
+      } else if (tx.type === 'ADMIN_CREDIT') {
+        u.totalWinnings += tx.amount;
+        u.adjustmentCount += 1;
+      } else if (tx.type === 'ADMIN_DEBIT' || tx.type === 'PENALTY') {
+        u.totalWinnings = Math.max(0, u.totalWinnings - tx.amount);
+        u.adjustmentCount += 1;
+      }
     }
   });
 
@@ -204,25 +268,41 @@ export const AdminUserWalletsManager: React.FC = () => {
 
   return (
     <div id="admin-user-wallets-manager" className="space-y-6">
+      {/* Toast Feedback */}
+      {actionSuccess && (
+        <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-3 animate-in fade-in">
+          <CheckCircle2 className="w-5 h-5 shrink-0" />
+          <span className="font-bold">{actionSuccess}</span>
+        </div>
+      )}
+      {actionError && (
+        <div className="p-4 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-400 text-xs flex items-center gap-3 animate-in fade-in">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span className="font-bold">{actionError}</span>
+        </div>
+      )}
+
       {/* Overview Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-between">
           <div>
-            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Active Esports Players</span>
-            <div className="text-2xl font-black text-white">{usersList.length}</div>
+            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Pending Deposits</span>
+            <div className={`text-2xl font-black ${pendingDeposits.length > 0 ? 'text-amber-400' : 'text-white'}`}>
+              {pendingDeposits.length}
+            </div>
           </div>
-          <div className="p-3 rounded-xl bg-orange-500/10 text-orange-400">
-            <User className="w-5 h-5" />
+          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400">
+            <Clock className="w-5 h-5" />
           </div>
         </div>
 
         <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-between">
           <div>
-            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Hourly Withdrawal Limit</span>
-            <div className="text-2xl font-black text-amber-400">₹500 / Hr</div>
+            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Active Players</span>
+            <div className="text-2xl font-black text-white">{usersList.length}</div>
           </div>
-          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-400">
-            <Clock className="w-5 h-5" />
+          <div className="p-3 rounded-xl bg-orange-500/10 text-orange-400">
+            <User className="w-5 h-5" />
           </div>
         </div>
 
@@ -238,7 +318,7 @@ export const AdminUserWalletsManager: React.FC = () => {
 
         <div className="p-4 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-between">
           <div>
-            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Total Wallet Adjustments</span>
+            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Wallet Adjustments</span>
             <div className="text-2xl font-black text-cyan-400">
               {walletTransactions.filter(t => t.type === 'ADMIN_CREDIT' || t.type === 'ADMIN_DEBIT' || t.type === 'MANUAL_ADJUSTMENT' || t.type === 'BONUS').length}
             </div>
@@ -247,6 +327,100 @@ export const AdminUserWalletsManager: React.FC = () => {
             <Wallet className="w-5 h-5" />
           </div>
         </div>
+      </div>
+
+      {/* PENDING DEPOSIT VERIFICATION SECTION */}
+      <div className="rounded-2xl bg-neutral-900 border border-neutral-800 overflow-hidden shadow-xl">
+        <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/50">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-amber-400" />
+            <div>
+              <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                Pending Wallet Deposits (UPI Verification)
+              </h3>
+              <p className="text-[11px] text-neutral-400">Verify 12-digit UTR in UPI/bank app before approving credit.</p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-400 border border-amber-500/30">
+            {pendingDeposits.length} PENDING
+          </span>
+        </div>
+
+        {pendingDeposits.length === 0 ? (
+          <div className="p-8 text-center text-neutral-500 space-y-1">
+            <CheckCheck className="w-8 h-8 mx-auto text-emerald-500" />
+            <p className="text-xs font-bold text-neutral-300">All direct deposits are verified & up to date!</p>
+            <p className="text-[11px] text-neutral-500">When players submit new top-up requests via UPI, they will appear here for 1-click verification.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-neutral-800">
+            {pendingDeposits.map((tx) => (
+              <div key={tx.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-neutral-850/50 transition">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      PENDING VERIFICATION
+                    </span>
+                    <span className="font-bold text-white text-sm">{tx.userName || 'Player'}</span>
+                    <span className="text-neutral-400 text-xs font-mono">({tx.userEmail || tx.userId})</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-300">
+                    <div className="flex items-center gap-1.5 bg-neutral-950 px-2.5 py-1 rounded-lg border border-neutral-800">
+                      <span className="text-neutral-400 font-semibold">12-Digit UTR:</span>
+                      <span className="font-mono font-bold text-orange-400 select-all">{tx.referenceId || tx.meta?.utrNumber || 'N/A'}</span>
+                      <button
+                        onClick={() => handleCopyUtr(tx.referenceId || tx.meta?.utrNumber || '')}
+                        className="p-1 text-neutral-400 hover:text-white rounded"
+                        title="Copy UTR Number"
+                      >
+                        {copiedUtr === (tx.referenceId || tx.meta?.utrNumber) ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+
+                    <span className="text-neutral-500">•</span>
+                    <span className="text-neutral-400">{new Date(tx.timestamp).toLocaleString()}</span>
+                  </div>
+
+                  {tx.meta?.note && (
+                    <p className="text-[11px] text-neutral-400 italic">User note: "{tx.meta.note}"</p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-right">
+                    <span className="text-[10px] font-semibold text-neutral-400 block uppercase">Requested Amount</span>
+                    <span className="text-lg font-black text-emerald-400 font-mono">₹{tx.amount}</span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={processingTxId === tx.id}
+                      onClick={() => handleApproveDeposit(tx.id)}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{processingTxId === tx.id ? 'Approving...' : 'Approve & Credit'}</span>
+                    </button>
+
+                    <button
+                      disabled={processingTxId === tx.id}
+                      onClick={() => setRejectModalTx(tx)}
+                      className="px-3 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/30 text-red-400 border border-red-500/30 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Reject</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Action Bar & Search */}
@@ -274,7 +448,7 @@ export const AdminUserWalletsManager: React.FC = () => {
           className="w-full md:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-orange-600/25 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>Manual Balance Update</span>
+          <span>Manual Balance Update / Credit</span>
         </button>
       </div>
 
@@ -311,7 +485,6 @@ export const AdminUserWalletsManager: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-neutral-800/80 font-medium">
                 {filteredUsers.map((u) => {
-                  const netBalance = u.totalWinnings + u.totalDeposits - u.totalWithdrawn;
                   return (
                     <tr key={u.email} className="hover:bg-neutral-800/40 transition">
                       <td className="p-3.5">
@@ -338,7 +511,7 @@ export const AdminUserWalletsManager: React.FC = () => {
                           onClick={() => handleOpenAdjust(u.email, u.name, u.gameUid)}
                           className="px-3 py-1.5 rounded-lg bg-orange-500/15 hover:bg-orange-500/30 text-orange-400 font-bold text-xs border border-orange-500/30 transition cursor-pointer"
                         >
-                          Adjust Balance
+                          ⚡ Adjust Balance
                         </button>
                       </td>
                     </tr>
@@ -361,7 +534,7 @@ export const AdminUserWalletsManager: React.FC = () => {
           <p className="text-xs text-neutral-500 py-4 text-center">No wallet audit records yet.</p>
         ) : (
           <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-            {walletTransactions.slice(0, 15).map((tx) => (
+            {walletTransactions.slice(0, 20).map((tx) => (
               <div 
                 key={tx.id} 
                 className="p-3 rounded-xl bg-neutral-950 border border-neutral-800/80 flex items-center justify-between gap-3 text-xs"
@@ -369,13 +542,17 @@ export const AdminUserWalletsManager: React.FC = () => {
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                      tx.type === 'PRIZE_WON' || tx.type === 'ADMIN_CREDIT' || tx.type === 'BONUS'
+                      tx.status === 'PENDING'
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : tx.status === 'REJECTED'
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        : tx.type === 'PRIZE_WON' || tx.type === 'ADMIN_CREDIT' || tx.type === 'BONUS'
                         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                         : tx.type === 'DEPOSIT'
                         ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                         : 'bg-red-500/20 text-red-400 border border-red-500/30'
                     }`}>
-                      {tx.type}
+                      {tx.type} ({tx.status || 'COMPLETED'})
                     </span>
                     <span className="font-bold text-white">{tx.userName || tx.userEmail || 'Player'}</span>
                     <span className="text-neutral-500 font-mono text-[10px]">{new Date(tx.timestamp).toLocaleString()}</span>
@@ -385,7 +562,9 @@ export const AdminUserWalletsManager: React.FC = () => {
 
                 <div className="text-right">
                   <span className={`font-mono font-black text-sm ${
-                    tx.type === 'PRIZE_WON' || tx.type === 'ADMIN_CREDIT' || tx.type === 'BONUS' || tx.type === 'DEPOSIT'
+                    tx.status === 'REJECTED'
+                      ? 'text-neutral-500 line-through'
+                      : tx.type === 'PRIZE_WON' || tx.type === 'ADMIN_CREDIT' || tx.type === 'BONUS' || tx.type === 'DEPOSIT'
                       ? 'text-emerald-400'
                       : 'text-red-400'
                   }`}>
@@ -397,6 +576,62 @@ export const AdminUserWalletsManager: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* REJECT DEPOSIT MODAL */}
+      {rejectModalTx && (
+        <div 
+          className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/85 backdrop-blur-md p-3 sm:p-4 animate-in fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRejectModalTx(null);
+          }}
+        >
+          <div className="min-h-full flex items-center justify-center py-4">
+            <div className="relative w-full max-w-md rounded-3xl bg-neutral-900 border border-neutral-800 p-6 space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <div className="flex items-center gap-2 text-red-400">
+                  <XCircle className="w-5 h-5" />
+                  <h3 className="text-base font-black text-white">Reject Deposit Request</h3>
+                </div>
+                <button onClick={() => setRejectModalTx(null)} className="text-neutral-400 hover:text-white">✕</button>
+              </div>
+
+              <div className="bg-neutral-950 p-3 rounded-xl border border-neutral-800 text-xs space-y-1">
+                <div><strong className="text-neutral-400">Player:</strong> <span className="text-white font-bold">{rejectModalTx.userName}</span></div>
+                <div><strong className="text-neutral-400">Amount:</strong> <span className="text-emerald-400 font-bold">₹{rejectModalTx.amount}</span></div>
+                <div><strong className="text-neutral-400">UTR:</strong> <span className="text-orange-400 font-mono">{rejectModalTx.referenceId}</span></div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-neutral-300">Rejection Reason</label>
+                <textarea
+                  rows={2}
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-neutral-950 border border-neutral-800 text-white text-xs focus:border-red-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalTx(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-neutral-800 text-neutral-300 text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRejectDeposit}
+                  disabled={processingTxId === rejectModalTx.id}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs disabled:opacity-50"
+                >
+                  {processingTxId === rejectModalTx.id ? 'Rejecting...' : 'Confirm Rejection'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ADJUST WALLET MODAL */}
       {showAdjustModal && (

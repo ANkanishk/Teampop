@@ -45,6 +45,7 @@ export const EmailNotificationsManager: React.FC = () => {
   const [smtpPort, setSmtpPort] = useState('465');
   const [showPassword, setShowPassword] = useState(false);
   const [isSavingSmtp, setIsSavingSmtp] = useState(false);
+  const [isVerifyingSmtp, setIsVerifyingSmtp] = useState(false);
   const [smtpStatusMessage, setSmtpStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Test Email state

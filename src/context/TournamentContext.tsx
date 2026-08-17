@@ -117,6 +117,8 @@ interface TournamentContextType {
     utrNumber: string;
     note?: string;
   }) => Promise<{ success: boolean; error?: string }>;
+  approveDirectDeposit: (txId: string, adminRemarks?: string) => Promise<{ success: boolean; message?: string }>;
+  rejectDirectDeposit: (txId: string, reason?: string) => Promise<{ success: boolean; message?: string }>;
   adminAdjustUserWallet: (params: {
     userId: string;
     userEmail?: string;
@@ -1384,19 +1386,26 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const tx: WalletTransaction = {
       id: txId,
       userId: effectiveUid,
+      userEmail: effectiveEmail,
+      userName: effectiveName,
       type: 'DEPOSIT',
       amount: data.amount,
       description: `Wallet Deposit (UTR: ${cleanUtr}) - ${data.note || 'UPI Top-up'}`,
       referenceId: cleanUtr,
-      status: 'COMPLETED',
+      status: 'PENDING',
       timestamp: new Date().toISOString(),
+      meta: {
+        utrNumber: cleanUtr,
+        note: data.note || 'UPI Top-up',
+        submittedAt: new Date().toISOString(),
+      },
     };
     setWalletTransactions((prev) => [tx, ...prev]);
 
     addNotification({
       userId: effectiveUid,
-      title: '💳 Match Credits / Deposit Added',
-      message: `₹${data.amount} has been added to your match deposit balance (UTR: ${cleanUtr}).`,
+      title: '💳 Deposit Submitted (Verification Pending)',
+      message: `Deposit request of ₹${data.amount} (UTR: ${cleanUtr}) has been submitted. It will be added to your balance once verified by Admin.`,
       type: 'SYSTEM',
       actionUrl: 'profile',
     });
@@ -1420,6 +1429,94 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
 
     return { success: true };
+  };
+
+  const approveDirectDeposit = async (txId: string, adminRemarks?: string): Promise<{ success: boolean; message?: string }> => {
+    const targetTx = walletTransactions.find((t) => t.id === txId);
+    if (!targetTx) {
+      return { success: false, message: 'Deposit transaction not found' };
+    }
+
+    setWalletTransactions((prev) =>
+      prev.map((t) =>
+        t.id === txId
+          ? {
+              ...t,
+              status: 'COMPLETED',
+              meta: {
+                ...t.meta,
+                approvedAt: new Date().toISOString(),
+                adminRemarks: adminRemarks || 'Approved by Admin',
+              },
+            }
+          : t
+      )
+    );
+
+    // Notify the user in-app
+    addNotification({
+      userId: targetTx.userId,
+      title: '🎉 Wallet Deposit Approved & Credited!',
+      message: `Your deposit of ₹${targetTx.amount} (UTR: ${targetTx.referenceId || '-'}) has been approved and added to your wallet balance.`,
+      type: 'PRIZE_WON',
+      actionUrl: 'profile',
+    });
+
+    // Send email notification to user
+    try {
+      fetch('/api/notifications/wallet-adjusted', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: targetTx.userId,
+          userEmail: targetTx.userEmail || 'player@gmail.com',
+          userName: targetTx.userName || 'Player',
+          amount: targetTx.amount,
+          actionType: 'CREDIT',
+          category: 'DEPOSIT',
+          description: `Deposit Approved (UTR: ${targetTx.referenceId || '-'})${adminRemarks ? ` - ${adminRemarks}` : ''}`,
+          transactionId: txId,
+        }),
+      }).catch((e) => console.log('Deposit approval email silently logged:', e));
+    } catch (e) {
+      console.log('Error sending deposit approval email:', e);
+    }
+
+    return { success: true, message: `Deposit of ₹${targetTx.amount} approved and credited to user wallet!` };
+  };
+
+  const rejectDirectDeposit = async (txId: string, reason?: string): Promise<{ success: boolean; message?: string }> => {
+    const targetTx = walletTransactions.find((t) => t.id === txId);
+    if (!targetTx) {
+      return { success: false, message: 'Deposit transaction not found' };
+    }
+
+    setWalletTransactions((prev) =>
+      prev.map((t) =>
+        t.id === txId
+          ? {
+              ...t,
+              status: 'REJECTED',
+              meta: {
+                ...t.meta,
+                rejectedAt: new Date().toISOString(),
+                rejectionReason: reason || 'Invalid UTR / Payment not received',
+              },
+            }
+          : t
+      )
+    );
+
+    // Notify the user
+    addNotification({
+      userId: targetTx.userId,
+      title: '❌ Wallet Deposit Request Rejected',
+      message: `Your deposit of ₹${targetTx.amount} (UTR: ${targetTx.referenceId || '-'}) was rejected: ${reason || 'Payment could not be verified in bank records'}.`,
+      type: 'SYSTEM',
+      actionUrl: 'profile',
+    });
+
+    return { success: true, message: `Deposit transaction rejected.` };
   };
 
   const adminAdjustUserWallet = async (params: {
@@ -1629,6 +1726,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         requestWithdrawal,
         processWithdrawalRequest,
         submitDirectDeposit,
+        approveDirectDeposit,
+        rejectDirectDeposit,
         adminAdjustUserWallet,
         getHourlyWithdrawalUsage,
         addNotification,
