@@ -644,6 +644,19 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         password: cleanPass,
       };
       setRegisteredUsers(updatedUsers);
+    } else if (ADMIN_EMAILS.includes(cleanInput)) {
+      const newAdminUser: AuthPlayerProfile = {
+        uid: 'admin-wepopearn',
+        email: 'wepopearn@gmail.com',
+        displayName: 'POP Esports Admin',
+        password: cleanPass,
+        phone: '9199620000',
+        inGameName: 'POP_MASTER_ADMIN',
+        gameUid: '1000000001',
+        role: 'ADMIN',
+        createdAt: new Date().toISOString(),
+      };
+      setRegisteredUsers((prev) => [newAdminUser, ...prev]);
     }
 
     return { success: true, message: `✅ Password has been reset successfully! You can now sign in with your new password.` };

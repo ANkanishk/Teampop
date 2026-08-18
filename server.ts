@@ -89,12 +89,12 @@ function savePersistedSmtpConfig(config: SmtpRuntimeConfig) {
 const savedDiskConfig = loadPersistedSmtpConfig();
 
 let activeSmtpConfig: SmtpRuntimeConfig = {
-  host: savedDiskConfig.host || process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: savedDiskConfig.port || parseInt(process.env.SMTP_PORT || '465', 10),
-  secure: savedDiskConfig.secure !== undefined ? savedDiskConfig.secure : (process.env.SMTP_SECURE === 'false' ? false : true),
-  user: savedDiskConfig.user || process.env.SMTP_USER || 'wepopearn@gmail.com',
-  pass: savedDiskConfig.pass || process.env.SMTP_PASS || 'zbzfxuutgchfqjbz',
-  from: savedDiskConfig.from || process.env.SMTP_FROM || 'POP Gaming Tournaments <wepopearn@gmail.com>',
+  host: process.env.SMTP_HOST || savedDiskConfig.host || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || String(savedDiskConfig.port || '465'), 10),
+  secure: process.env.SMTP_SECURE !== undefined ? process.env.SMTP_SECURE !== 'false' : (savedDiskConfig.secure !== undefined ? savedDiskConfig.secure : true),
+  user: (process.env.SMTP_USER || savedDiskConfig.user || 'wepopearn@gmail.com').trim(),
+  pass: (process.env.SMTP_PASS || savedDiskConfig.pass || 'zbzfxuutgchfqjbz').trim(),
+  from: process.env.SMTP_FROM || savedDiskConfig.from || 'POP Gaming Tournaments <wepopearn@gmail.com>',
 };
 
 // In-Memory OTP Store with 10-minute expiry
@@ -108,6 +108,20 @@ const otpStore = new Map<string, OtpEntry>();
 // Lazy transporter creation
 let transporter: nodemailer.Transporter | null = null;
 let isSimulated = false;
+
+function createGmailTransporter(user: string, pass: string): nodemailer.Transporter {
+  const cleanPass = pass.trim().replace(/\s+/g, '');
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: user.trim(),
+      pass: cleanPass,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+}
 
 function initMailTransporter(config?: Partial<SmtpRuntimeConfig>): { transporter: nodemailer.Transporter; simulated: boolean } {
   if (config) {
@@ -123,23 +137,11 @@ function initMailTransporter(config?: Partial<SmtpRuntimeConfig>): { transporter
 
   if (user && pass && pass.trim().length > 0) {
     try {
-      // Clean app password for Gmail (stripping any accidental inner spaces)
       const cleanPass = pass.trim().replace(/\s+/g, '');
       const isGmail = (host && host.includes('gmail')) || user.includes('@gmail.com');
 
       if (isGmail) {
-        transporter = nodemailer.createTransport({
-          host: 'smtp.gmail.com',
-          port: 465,
-          secure: true,
-          auth: {
-            user: user.trim(),
-            pass: cleanPass,
-          },
-          tls: {
-            rejectUnauthorized: false,
-          },
-        });
+        transporter = createGmailTransporter(user, cleanPass);
       } else {
         transporter = nodemailer.createTransport({
           host: host || 'smtp.gmail.com',
@@ -156,7 +158,7 @@ function initMailTransporter(config?: Partial<SmtpRuntimeConfig>): { transporter
       }
 
       isSimulated = false;
-      console.log(`[Email Engine] Configured Live SMTP for ${user} (host: ${isGmail ? 'smtp.gmail.com' : host})`);
+      console.log(`[Email Engine] Configured Live SMTP for ${user} (service: ${isGmail ? 'Gmail' : host})`);
       return { transporter, simulated: false };
     } catch (e) {
       console.error('[Email Engine] Live SMTP setup failed, falling back to simulated mode', e);
@@ -393,7 +395,7 @@ function generateConfirmationEmailHtml(data: RegistrationApprovalPayload): strin
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -540,11 +542,35 @@ async function startServer() {
             type: 'EMAIL',
           });
         } catch (mailErr: any) {
-          console.error('[Auth OTP Email Send Failed]', mailErr);
-          return res.status(500).json({
-            success: false,
-            error: `Failed to send email to ${cleanTarget}: ${mailErr.message || 'SMTP connection issue'}`,
-          });
+          console.warn('[Auth OTP Primary SMTP Failed, trying fallback 587 port...]', mailErr.message);
+          try {
+            const fallbackMailer = nodemailer.createTransport({
+              host: 'smtp.gmail.com',
+              port: 587,
+              secure: false,
+              auth: {
+                user: activeSmtpConfig.user || 'wepopearn@gmail.com',
+                pass: (activeSmtpConfig.pass || 'zbzfxuutgchfqjbz').replace(/\s+/g, ''),
+              },
+              tls: {
+                rejectUnauthorized: false,
+              },
+            });
+            const fallbackInfo = await fallbackMailer.sendMail(mailOptions);
+            console.log(`[Auth OTP Email Sent via Fallback] Delivered to ${cleanTarget}, MessageId: ${fallbackInfo.messageId}`);
+            return res.json({
+              success: true,
+              message: `Verification code sent to ${cleanTarget}. Please check your Inbox and Spam folder.`,
+              target: cleanTarget,
+              type: 'EMAIL',
+            });
+          } catch (fallbackErr: any) {
+            console.error('[Auth OTP All SMTP Attempts Failed]', fallbackErr);
+            return res.status(500).json({
+              success: false,
+              error: `Failed to send email to ${cleanTarget}: ${fallbackErr.message || 'SMTP connection issue'}. Please check your Gmail App Password.`,
+            });
+          }
         }
       } else {
         // Phone OTP
