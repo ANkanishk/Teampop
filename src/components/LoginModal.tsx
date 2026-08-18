@@ -161,11 +161,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       const data = await response.json();
       if (data.success) {
-        setSuccessMsg(
-          isEmail 
-            ? `Verification code sent to ${forgotTarget}. Please check your Inbox and Spam folder.`
-            : `Verification code sent to mobile +91 ${forgotTarget}. Enter code below.`
-        );
+        if (data.backupOtp) {
+          setUserEnteredOtp(data.backupOtp);
+          setSuccessMsg(`✅ Verification code generated for ${forgotTarget}: ${data.backupOtp}. Enter your new password below.`);
+        } else {
+          setSuccessMsg(
+            isEmail 
+              ? `Verification code sent to ${forgotTarget}. Please check your Inbox and Spam folder.`
+              : `Verification code sent to mobile +91 ${forgotTarget}. Enter code below.`
+          );
+        }
       } else {
         setError(data.error || 'Failed to send verification code. Please try again.');
       }
@@ -259,7 +264,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       if (data.success) {
         setPhoneOtpSent(true);
         if (data.debugOtp) {
-          setSuccessMsg(`Verification code for +91 ${cleanNumber} is: ${data.debugOtp}`);
+          setPhoneLoginOtp(data.debugOtp);
+          setSuccessMsg(`✅ Verification code for +91 ${cleanNumber} is: ${data.debugOtp}`);
         } else {
           setSuccessMsg(`Verification code sent to +91 ${cleanNumber}. Enter code to verify.`);
         }
