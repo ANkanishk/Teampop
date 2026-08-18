@@ -161,15 +161,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       const data = await response.json();
       if (data.success) {
         setOtpSent(true);
-        if (data.debugOtp) {
-          setSuccessMsg(`✅ Verification code for ${forgotTarget} is: ${data.debugOtp}`);
-        } else {
-          setSuccessMsg(
-            isEmail 
-              ? `Verification code sent to ${forgotTarget}. Please check your Inbox and Spam folder.`
-              : `Verification code sent to mobile +91 ${forgotTarget}. Enter code below.`
-          );
-        }
+        setSuccessMsg(
+          isEmail 
+            ? `Verification code sent to ${forgotTarget}. Please check your Inbox and Spam folder.`
+            : `Verification code sent to mobile +91 ${forgotTarget}. Enter code below.`
+        );
       } else {
         setError(data.error || 'Failed to send verification code. Please try again.');
       }
@@ -180,11 +176,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  // 4. Verify OTP and Set New Password
+  // 4. Verify OTP and Set New Password (Strict OTP Verification Required)
   const handleVerifyOtpAndResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userEnteredOtp.trim() || userEnteredOtp.length !== 6) {
-      setError('Please enter the valid 6-digit verification code.');
+    if (!userEnteredOtp.trim() || userEnteredOtp.trim().length !== 6) {
+      setError('Please enter the 6-digit verification code sent to your email.');
       return;
     }
     if (newPassword.length < 4) {
@@ -196,7 +192,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setError(null);
 
     try {
-      // 1. Verify OTP with server
+      // 1. Verify OTP with server - strictly enforced
       const verifyRes = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -208,7 +204,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       const verifyData = await verifyRes.json();
       if (!verifyData.success) {
-        setError(verifyData.error || 'Invalid verification code.');
+        setError(verifyData.error || 'Invalid or expired verification code. Please check your email or request a new code.');
         setLoading(false);
         return;
       }
@@ -220,11 +216,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         setTimeout(() => {
           setMode('LOGIN');
           setLoginIdentifier(forgotTarget.trim());
+          setLoginPassword(newPassword.trim());
           setSuccessMsg(null);
           setOtpSent(false);
           setUserEnteredOtp('');
           setNewPassword('');
-        }, 1500);
+        }, 1200);
       } else {
         setError(res.error || 'Password reset failed.');
       }
@@ -493,7 +490,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     setSuccessMsg(null);
                     setPhoneOtpSent(false);
                   }}
-                  className="text-xs text-neutral-400 hover:text-orange-400 font-semibold transition cursor-pointer inline-flex items-center gap-1.5"
+                  className="text-xs text-neutral-400 hover:text-orange-400 font-semibold transition cursor-pointer inline-flex items-center justify-center gap-1.5"
                 >
                   <Smartphone className="w-3.5 h-3.5 text-orange-400" />
                   <span>Sign In using Mobile Number + OTP instead</span>

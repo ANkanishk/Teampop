@@ -566,13 +566,9 @@ async function startServer() {
             });
           } catch (fallbackErr: any) {
             console.error('[Auth OTP All SMTP Attempts Failed]', fallbackErr);
-            return res.json({
-              success: true,
-              message: `Verification code generated for ${cleanTarget}.`,
-              target: cleanTarget,
-              type: 'EMAIL',
-              debugOtp: otp,
-              smtpError: fallbackErr.message,
+            return res.status(500).json({
+              success: false,
+              error: `Could not send verification email to ${cleanTarget}: ${fallbackErr.message || 'SMTP error'}. Please try again later.`,
             });
           }
         }
