@@ -117,6 +117,9 @@ function createGmailTransporter(user: string, pass: string): nodemailer.Transpor
       user: user.trim(),
       pass: cleanPass,
     },
+    connectionTimeout: 4000,
+    greetingTimeout: 4000,
+    socketTimeout: 4000,
     tls: {
       rejectUnauthorized: false,
     },
@@ -548,6 +551,9 @@ async function startServer() {
               host: 'smtp.gmail.com',
               port: 587,
               secure: false,
+              connectionTimeout: 4000,
+              greetingTimeout: 4000,
+              socketTimeout: 4000,
               auth: {
                 user: activeSmtpConfig.user || 'wepopearn@gmail.com',
                 pass: (activeSmtpConfig.pass || 'zbzfxuutgchfqjbz').replace(/\s+/g, ''),

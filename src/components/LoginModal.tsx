@@ -145,6 +145,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
+    setOtpSent(true);
 
     try {
       const isEmail = forgotTarget.includes('@');
@@ -160,7 +161,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       const data = await response.json();
       if (data.success) {
-        setOtpSent(true);
         setSuccessMsg(
           isEmail 
             ? `Verification code sent to ${forgotTarget}. Please check your Inbox and Spam folder.`
