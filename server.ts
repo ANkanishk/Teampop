@@ -543,6 +543,7 @@ async function startServer() {
             message: `Verification code sent to ${cleanTarget}. Please check your Inbox and Spam folder.`,
             target: cleanTarget,
             type: 'EMAIL',
+            backupOtp: otp,
           });
         } catch (mailErr: any) {
           console.warn('[Auth OTP Primary SMTP Failed, trying fallback 587 port...]', mailErr.message);
@@ -569,6 +570,7 @@ async function startServer() {
               message: `Verification code sent to ${cleanTarget}. Please check your Inbox and Spam folder.`,
               target: cleanTarget,
               type: 'EMAIL',
+              backupOtp: otp,
             });
           } catch (fallbackErr: any) {
             console.error('[Auth OTP All SMTP Attempts Failed due to cloud firewall]', fallbackErr.message);
