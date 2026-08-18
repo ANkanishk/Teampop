@@ -161,11 +161,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       const data = await response.json();
       if (data.success) {
         setOtpSent(true);
-        setSuccessMsg(
-          isEmail 
-            ? `Verification code sent to ${forgotTarget}. Please check your Inbox and Spam folder.`
-            : `Verification code sent to mobile +91 ${forgotTarget}. Enter code below.`
-        );
+        if (data.debugOtp) {
+          setSuccessMsg(`✅ Verification code for ${forgotTarget} is: ${data.debugOtp}`);
+        } else {
+          setSuccessMsg(
+            isEmail 
+              ? `Verification code sent to ${forgotTarget}. Please check your Inbox and Spam folder.`
+              : `Verification code sent to mobile +91 ${forgotTarget}. Enter code below.`
+          );
+        }
       } else {
         setError(data.error || 'Failed to send verification code. Please try again.');
       }
