@@ -112,14 +112,13 @@ let isSimulated = false;
 function createGmailTransporter(user: string, pass: string): nodemailer.Transporter {
   const cleanPass = pass.trim().replace(/\s+/g, '');
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
       user: user.trim(),
       pass: cleanPass,
     },
-    connectionTimeout: 4000,
-    greetingTimeout: 4000,
-    socketTimeout: 4000,
     tls: {
       rejectUnauthorized: false,
     },
@@ -543,7 +542,6 @@ async function startServer() {
             message: `Verification code sent to ${cleanTarget}. Please check your Inbox and Spam folder.`,
             target: cleanTarget,
             type: 'EMAIL',
-            backupOtp: otp,
           });
         } catch (mailErr: any) {
           console.warn('[Auth OTP Primary SMTP Failed, trying fallback 587 port...]', mailErr.message);
@@ -552,9 +550,6 @@ async function startServer() {
               host: 'smtp.gmail.com',
               port: 587,
               secure: false,
-              connectionTimeout: 4000,
-              greetingTimeout: 4000,
-              socketTimeout: 4000,
               auth: {
                 user: activeSmtpConfig.user || 'wepopearn@gmail.com',
                 pass: (activeSmtpConfig.pass || 'zbzfxuutgchfqjbz').replace(/\s+/g, ''),
@@ -570,17 +565,12 @@ async function startServer() {
               message: `Verification code sent to ${cleanTarget}. Please check your Inbox and Spam folder.`,
               target: cleanTarget,
               type: 'EMAIL',
-              backupOtp: otp,
             });
           } catch (fallbackErr: any) {
-            console.error('[Auth OTP All SMTP Attempts Failed due to cloud firewall]', fallbackErr.message);
-            return res.json({
-              success: true,
-              message: `Verification code generated for ${cleanTarget}.`,
-              target: cleanTarget,
-              type: 'EMAIL',
-              backupOtp: otp,
-              notice: 'Delivered via instant fail-safe security protocol',
+            console.error('[Auth OTP All SMTP Attempts Failed]', fallbackErr.message);
+            return res.status(500).json({
+              success: false,
+              error: `Could not send verification email to ${cleanTarget}: ${fallbackErr.message || 'SMTP Error'}. Please check your email or try again.`,
             });
           }
         }
@@ -591,7 +581,6 @@ async function startServer() {
           message: `Verification code sent to +91 ${cleanTarget}.`,
           target: cleanTarget,
           type: 'PHONE',
-          debugOtp: otp,
         });
       }
     } catch (err: any) {
