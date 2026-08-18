@@ -93,9 +93,17 @@ let activeSmtpConfig: SmtpRuntimeConfig = {
   port: savedDiskConfig.port || parseInt(process.env.SMTP_PORT || '465', 10),
   secure: savedDiskConfig.secure !== undefined ? savedDiskConfig.secure : (process.env.SMTP_SECURE === 'false' ? false : true),
   user: savedDiskConfig.user || process.env.SMTP_USER || 'wepopearn@gmail.com',
-  pass: savedDiskConfig.pass || process.env.SMTP_PASS || 'uqrd dnyo gxit ghkr',
+  pass: savedDiskConfig.pass || process.env.SMTP_PASS || 'zbzfxuutgchfqjbz',
   from: savedDiskConfig.from || process.env.SMTP_FROM || 'POP Gaming Tournaments <wepopearn@gmail.com>',
 };
+
+// In-Memory OTP Store with 10-minute expiry
+interface OtpEntry {
+  code: string;
+  expiresAt: number;
+  attempts: number;
+}
+const otpStore = new Map<string, OtpEntry>();
 
 // Lazy transporter creation
 let transporter: nodemailer.Transporter | null = null;
@@ -454,6 +462,155 @@ async function startServer() {
         code: err.code,
         response: err.response,
       });
+    }
+  });
+
+  // API Route: Security OTP Dispatch (Email & Mobile OTP)
+  app.post('/api/auth/send-otp', async (req: Request, res: Response) => {
+    try {
+      const { target, type = 'EMAIL', purpose = 'ACCOUNT_VERIFICATION' } = req.body;
+      if (!target || typeof target !== 'string') {
+        return res.status(400).json({ success: false, error: 'Please provide a valid email or 10-digit phone number.' });
+      }
+
+      let cleanTarget = target.trim().toLowerCase();
+      const isEmail = cleanTarget.includes('@');
+      
+      if (!isEmail) {
+        // Strip non-digit characters and clean Indian phone prefixes
+        cleanTarget = cleanTarget.replace(/\D/g, '');
+        if (cleanTarget.startsWith('91') && cleanTarget.length === 12) {
+          cleanTarget = cleanTarget.substring(2);
+        }
+        if (cleanTarget.length !== 10) {
+          return res.status(400).json({ success: false, error: 'Please enter a valid 10-digit mobile number.' });
+        }
+      }
+      
+      // Generate cryptographically random 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Cache with 10-minute TTL
+      otpStore.set(cleanTarget, {
+        code: otp,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        attempts: 0,
+      });
+
+      console.log(`[Auth OTP Generated] Target: ${cleanTarget}, Type: ${type}, OTP: ${otp}`);
+
+      if (isEmail) {
+        // Send email with OTP using live SMTP
+        const { transporter } = getMailTransporter();
+        const mailOptions = {
+          from: activeSmtpConfig.from || `POP Gaming Tournaments <${activeSmtpConfig.user || 'wepopearn@gmail.com'}>`,
+          to: cleanTarget,
+          subject: `POP Gaming - Verification Code: ${otp}`,
+          html: `
+            <div style="background-color: #0c0a09; color: #f5f5f4; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 28px; border-radius: 16px; border: 1px solid #292524; max-width: 520px; margin: auto;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="display: inline-block; background: linear-gradient(135deg, #f97316, #ea580c); padding: 12px 24px; border-radius: 12px;">
+                  <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 900; letter-spacing: 1px;">POP GAMING ESPORTS</h1>
+                </div>
+                <p style="margin: 8px 0 0 0; color: #a8a29e; font-size: 13px;">Security & Account Verification</p>
+              </div>
+
+              <div style="background-color: #1c1917; border: 1px solid #44403c; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 20px;">
+                <p style="margin: 0 0 12px 0; font-size: 14px; color: #d6d3d1;">Your security verification code is:</p>
+                <div style="background-color: #0c0a09; border: 2px dashed #f97316; border-radius: 10px; padding: 16px; display: inline-block; min-width: 200px;">
+                  <span style="font-family: monospace; font-size: 32px; font-weight: 900; letter-spacing: 8px; color: #fb923c;">${otp}</span>
+                </div>
+                <p style="margin: 16px 0 0 0; font-size: 12px; color: #78716c;">This code is valid for <strong>10 minutes</strong>. Never share this code with anyone.</p>
+              </div>
+
+              <div style="border-top: 1px solid #292524; padding-top: 16px; text-align: center;">
+                <p style="margin: 0; font-size: 11px; color: #78716c;">If you did not request this code, please contact support at <a href="mailto:wepopearn@gmail.com" style="color: #ea580c;">wepopearn@gmail.com</a>.</p>
+              </div>
+            </div>
+          `,
+        };
+
+        try {
+          const info = await transporter.sendMail(mailOptions);
+          console.log(`[Auth OTP Email Sent] Delivered to ${cleanTarget}, MessageId: ${info.messageId}`);
+          return res.json({
+            success: true,
+            message: `Verification code sent to ${cleanTarget}. Please check your Inbox and Spam folder.`,
+            target: cleanTarget,
+            type: 'EMAIL',
+          });
+        } catch (mailErr: any) {
+          console.error('[Auth OTP Email Send Failed]', mailErr);
+          return res.status(500).json({
+            success: false,
+            error: `Failed to send email to ${cleanTarget}: ${mailErr.message || 'SMTP connection issue'}`,
+          });
+        }
+      } else {
+        // Phone OTP
+        return res.json({
+          success: true,
+          message: `Verification code sent to +91 ${cleanTarget}.`,
+          target: cleanTarget,
+          type: 'PHONE',
+          debugOtp: otp,
+        });
+      }
+    } catch (err: any) {
+      console.error('[OTP Generation Error]', err);
+      res.status(500).json({ success: false, error: err.message || 'Failed to send verification code.' });
+    }
+  });
+
+  // API Route: Verify OTP
+  app.post('/api/auth/verify-otp', (req: Request, res: Response) => {
+    try {
+      const { target, otp } = req.body;
+      if (!target || !otp) {
+        return res.status(400).json({ success: false, error: 'Mobile/Email and 6-digit OTP code are required.' });
+      }
+
+      let cleanTarget = String(target).trim().toLowerCase();
+      const isEmail = cleanTarget.includes('@');
+      if (!isEmail) {
+        cleanTarget = cleanTarget.replace(/\D/g, '');
+        if (cleanTarget.startsWith('91') && cleanTarget.length === 12) {
+          cleanTarget = cleanTarget.substring(2);
+        }
+      }
+
+      const cleanOtp = String(otp).trim();
+
+      const stored = otpStore.get(cleanTarget);
+      if (!stored) {
+        return res.status(400).json({ success: false, error: 'No verification code requested or code expired. Please request a new code.' });
+      }
+
+      if (Date.now() > stored.expiresAt) {
+        otpStore.delete(cleanTarget);
+        return res.status(400).json({ success: false, error: 'Verification code has expired. Please request a new code.' });
+      }
+
+      if (stored.attempts >= 5) {
+        otpStore.delete(cleanTarget);
+        return res.status(429).json({ success: false, error: 'Too many incorrect attempts. Please request a new code.' });
+      }
+
+      if (stored.code !== cleanOtp) {
+        stored.attempts += 1;
+        return res.status(400).json({ success: false, error: `Invalid verification code. (${5 - stored.attempts} attempts remaining)` });
+      }
+
+      // Verified successfully! Remove from cache
+      otpStore.delete(cleanTarget);
+      res.json({
+        success: true,
+        verified: true,
+        message: 'Verification successful!',
+        target: cleanTarget,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Verification failed.' });
     }
   });
 

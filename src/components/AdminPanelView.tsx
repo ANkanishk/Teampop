@@ -50,6 +50,7 @@ export const AdminPanelView: React.FC = () => {
     results,
     settings,
     withdrawals,
+    walletTransactions,
     updateSettings,
     createMatch,
     updateMatch,
@@ -147,6 +148,8 @@ export const AdminPanelView: React.FC = () => {
 
   const pendingRegistrationsCount = registrations.filter((r) => r.status === 'PENDING').length;
   const approvedRegistrationsCount = registrations.filter((r) => r.status === 'APPROVED').length;
+  const pendingDepositsCount = walletTransactions.filter((t) => t.type === 'DEPOSIT' && t.status === 'PENDING').length;
+  const pendingWithdrawalsCount = withdrawals.filter((w) => w.status === 'PENDING').length;
 
   const totalRewardsDistributed = results.reduce((acc, curr) => acc + curr.totalPayout, 0);
   const grossSurplus = totalCollections - totalRewardsDistributed;
@@ -465,12 +468,12 @@ export const AdminPanelView: React.FC = () => {
       <div className="flex flex-wrap gap-2 border-b border-neutral-800 pb-3">
         {[
           { id: 'DASHBOARD', label: 'Financial Dashboard', icon: TrendingUp },
-          { id: 'USER_WALLETS', label: 'User Wallets & Direct Updates', icon: Wallet, highlight: true },
+          { id: 'USER_WALLETS', label: `User Wallets & Deposit Approvals (${pendingDepositsCount})`, icon: Wallet, highlight: true },
           { id: 'UPI_APPS', label: 'UPI Payment Apps (POP, PhonePe, Paytm, GPay, Universal)', icon: Smartphone, highlight: true },
           { id: 'MEDIA_MANAGER', label: 'Logo, QR & Banners', icon: ImageIcon, highlight: true },
           { id: 'ANNOUNCEMENTS', label: 'Global Announcements', icon: Megaphone, highlight: true },
-          { id: 'REGISTRATIONS', label: `Pending Payments (${pendingRegistrationsCount})`, icon: DollarSign },
-          { id: 'WITHDRAWALS', label: `Withdrawal Requests (${withdrawals.filter(w => w.status === 'PENDING').length})`, icon: ArrowUpRight, highlight: true },
+          { id: 'REGISTRATIONS', label: `Pending Slot Payments (${pendingRegistrationsCount})`, icon: DollarSign },
+          { id: 'WITHDRAWALS', label: `Withdrawal Requests (${pendingWithdrawalsCount})`, icon: ArrowUpRight, highlight: true },
           { id: 'EMAIL_NOTIFICATIONS', label: 'Email Notifications & Logs', icon: Mail, highlight: true },
           { id: 'MATCHES', label: `Tournament Rooms (${matches.length})`, icon: Trophy },
           { id: 'RESULTS_ENTRY', label: 'Enter Results & Rewards', icon: Trophy },

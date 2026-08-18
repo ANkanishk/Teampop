@@ -797,9 +797,9 @@ export const WalletSection: React.FC = () => {
                   <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/30">
                     <CheckCircle2 className="w-8 h-8" />
                   </div>
-                  <h4 className="text-lg font-black text-white">Deposit Submitted Successfully!</h4>
+                  <h4 className="text-lg font-black text-white">Deposit Request Submitted!</h4>
                   <p className="text-xs text-neutral-400 max-w-sm mx-auto">
-                    ₹{depositAmount} has been credited to your match deposit balance. Verification alert has been dispatched to admin.
+                    Deposit request of ₹{depositAmount} (UTR: {depositUtr || 'Submitted'}) has been sent to Admin. It will be verified against bank records and credited to your wallet balance.
                   </p>
                 </div>
               ) : (

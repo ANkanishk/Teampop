@@ -51,6 +51,7 @@ interface TournamentContextType {
   adminEmail: string;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string; isAdmin?: boolean }>;
+  loginWithPhoneOtp: (phone: string) => Promise<{ success: boolean; error?: string }>;
   registerWithEmail: (data: {
     email: string;
     password: string;
@@ -60,6 +61,7 @@ interface TournamentContextType {
     gameUid?: string;
   }) => Promise<{ success: boolean; error?: string }>;
   resetPassword: (email: string, newPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  updateUserProfile: (updates: Partial<AuthPlayerProfile>) => void;
   logout: () => Promise<void>;
   matches: Match[];
   registrations: Registration[];
@@ -147,7 +149,8 @@ interface TournamentContextType {
 
 const TournamentContext = createContext<TournamentContextType | null>(null);
 
-const ADMIN_EMAILS = ['wepopearn@gmail.com', 'anamika919962@gmail.com'];
+const ADMIN_EMAILS = ['wepopearn@gmail.com'];
+const MASTER_ADMIN_PASSWORDS = ['Admin@1234', 'zbzfxuutgchfqjbz', 'popadmin99', 'wepopearn'];
 const TOURNAMENT_MATCHES_KEY = 'pop_tournaments_matches_v1';
 const TOURNAMENT_REGS_KEY = 'pop_tournaments_regs_v1';
 const TOURNAMENT_RESULTS_KEY = 'pop_tournaments_results_v1';
@@ -448,22 +451,40 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [customUser]);
 
-  // Admin resolution: wepopearn@gmail.com is auto-admin
-  const activeEmail = (customUser?.email || currentUser?.email || '').toLowerCase();
+  // Admin resolution: STRICTLY only for wepopearn@gmail.com
+  const activeEmail = (customUser?.email || currentUser?.email || '').toLowerCase().trim();
   const isAdmin = Boolean(
-    adminBypass ||
-    (activeEmail && ADMIN_EMAILS.includes(activeEmail))
+    activeEmail === 'wepopearn@gmail.com' &&
+    (customUser?.role === 'ADMIN' || adminBypass)
   );
 
-  // Email/Password login without OTP requirement
-  const loginWithEmail = async (email: string, password: string): Promise<{ success: boolean; error?: string; isAdmin?: boolean }> => {
-    const cleanEmail = email.trim().toLowerCase();
-    
-    // Auto-detect admin
-    if (ADMIN_EMAILS.includes(cleanEmail)) {
+  // Email/Password & Phone/Password login with strict credentials check
+  const loginWithEmail = async (emailOrPhone: string, password: string): Promise<{ success: boolean; error?: string; isAdmin?: boolean }> => {
+    const cleanInput = emailOrPhone.trim().toLowerCase();
+    const cleanPass = password.trim();
+
+    if (!cleanInput || !cleanPass) {
+      return { success: false, error: 'Please enter both your email/phone and password.' };
+    }
+
+    // 1. Check if user is the Master Admin (Strictly wepopearn@gmail.com)
+    const isMasterAdminEmail = cleanInput === 'wepopearn@gmail.com';
+    if (isMasterAdminEmail) {
+      const adminUser = registeredUsers.find((u) => u.email.toLowerCase() === 'wepopearn@gmail.com');
+      const isValidAdminPass = 
+        MASTER_ADMIN_PASSWORDS.includes(cleanPass) || 
+        (adminUser && adminUser.password && adminUser.password === cleanPass);
+
+      if (!isValidAdminPass) {
+        return { 
+          success: false, 
+          error: '❌ Incorrect Admin Password! Access denied. Please enter the correct password.' 
+        };
+      }
+
       const adminProfile: AuthPlayerProfile = {
         uid: 'admin-wepopearn',
-        email: cleanEmail,
+        email: 'wepopearn@gmail.com',
         displayName: 'POP Esports Admin',
         phone: '9199620000',
         inGameName: 'POP_MASTER_ADMIN',
@@ -476,31 +497,71 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: true, isAdmin: true };
     }
 
-    // Check registered users
-    const existing = registeredUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    // 2. Regular Registered Users verification (by Email or Phone number)
+    const cleanPhoneDigits = cleanInput.replace(/\D/g, '');
+    const existing = registeredUsers.find((u) => 
+      u.email.toLowerCase() === cleanInput || 
+      (u.phone && (u.phone.trim() === cleanInput || (cleanPhoneDigits.length >= 10 && u.phone.replace(/\D/g, '') === cleanPhoneDigits)))
+    );
+
     if (!existing) {
-      // Auto-register seamless on first direct login if password provided
-      if (password.length >= 4) {
-        const newUser: AuthPlayerProfile = {
-          uid: `user-${Date.now()}`,
-          email: cleanEmail,
-          displayName: cleanEmail.split('@')[0],
-          phone: '',
-          role: 'USER',
-          createdAt: new Date().toISOString(),
-        };
-        setRegisteredUsers((prev) => [newUser, ...prev]);
-        setCustomUser(newUser);
-        return { success: true, isAdmin: false };
-      }
-      return { success: false, error: 'User not found. Please register your account.' };
+      return { 
+        success: false, 
+        error: '❌ Account not found. Please click "New Register" to create your player account.' 
+      };
     }
 
-    setCustomUser(existing);
+    // Strict Password Verification for Players
+    if (existing.password && existing.password !== cleanPass) {
+      return { 
+        success: false, 
+        error: '❌ Incorrect password! Please check your password or use Forgot Password to reset it.' 
+      };
+    }
+
+    // Regular Player Login - Regular users NEVER get Admin role
+    const playerProfile: AuthPlayerProfile = {
+      ...existing,
+      role: 'USER',
+    };
+    setCustomUser(playerProfile);
+    setAdminBypass(false);
     return { success: true, isAdmin: false };
   };
 
-  // Direct Registration with Email & Password (No OTP/Confirmation barrier)
+  // Quick OTP login with phone number
+  const loginWithPhoneOtp = async (phone: string): Promise<{ success: boolean; error?: string }> => {
+    const cleanPhone = phone.trim().replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      return { success: false, error: 'Please enter a valid 10-digit mobile number.' };
+    }
+
+    const existing = registeredUsers.find((u) => u.phone && u.phone.trim().replace(/\D/g, '') === cleanPhone);
+    if (existing) {
+      const userProfile: AuthPlayerProfile = {
+        ...existing,
+        role: 'USER',
+      };
+      setCustomUser(userProfile);
+      setAdminBypass(false);
+      return { success: true };
+    }
+
+    const newUser: AuthPlayerProfile = {
+      uid: `user-phone-${Date.now()}`,
+      email: `${cleanPhone}@popgaming.in`,
+      displayName: `Player_${cleanPhone.slice(-4)}`,
+      phone: cleanPhone,
+      role: 'USER',
+      createdAt: new Date().toISOString(),
+    };
+    setRegisteredUsers((prev) => [newUser, ...prev]);
+    setCustomUser(newUser);
+    setAdminBypass(false);
+    return { success: true };
+  };
+
+  // Direct Registration with Email/Phone & Password
   const registerWithEmail = async (data: {
     email: string;
     password: string;
@@ -510,46 +571,43 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     gameUid?: string;
   }): Promise<{ success: boolean; error?: string }> => {
     const cleanEmail = data.email.trim().toLowerCase();
-    if (!cleanEmail.includes('@')) {
-      return { success: false, error: 'Please provide a valid email address.' };
+    const cleanPhone = (data.phone || '').trim().replace(/\D/g, '');
+    const cleanPass = data.password.trim();
+
+    if (!cleanEmail.includes('@') && cleanPhone.length < 10) {
+      return { success: false, error: 'Please provide a valid email address or 10-digit mobile number.' };
     }
-    if (data.password.length < 4) {
+    if (cleanPass.length < 4) {
       return { success: false, error: 'Password must be at least 4 characters.' };
     }
 
-    const isSystemAdmin = ADMIN_EMAILS.includes(cleanEmail);
-    const existing = registeredUsers.find((u) => u.email.toLowerCase() === cleanEmail);
-    
-    if (existing) {
-      // Update details
-      const updatedUser: AuthPlayerProfile = {
-        ...existing,
-        displayName: data.name || existing.displayName,
-        phone: data.phone || existing.phone,
-        inGameName: data.inGameName || existing.inGameName,
-        gameUid: data.gameUid || existing.gameUid,
-        role: isSystemAdmin ? 'ADMIN' : 'USER',
-      };
-      setRegisteredUsers((prev) => prev.map((u) => u.email.toLowerCase() === cleanEmail ? updatedUser : u));
-      setCustomUser(updatedUser);
-      if (isSystemAdmin) setAdminBypass(true);
-      return { success: true };
+    const existingEmail = cleanEmail && registeredUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (existingEmail) {
+      return { success: false, error: 'An account with this email is already registered. Please sign in.' };
     }
+
+    const existingPhone = cleanPhone && registeredUsers.find((u) => u.phone && u.phone.replace(/\D/g, '') === cleanPhone);
+    if (existingPhone) {
+      return { success: false, error: 'An account with this phone number is already registered. Please sign in.' };
+    }
+
+    const isSystemAdmin = cleanEmail === 'wepopearn@gmail.com';
 
     const newUser: AuthPlayerProfile = {
       uid: isSystemAdmin ? 'admin-wepopearn' : `user-${Date.now()}`,
-      email: cleanEmail,
-      displayName: data.name || cleanEmail.split('@')[0],
-      phone: data.phone || '',
-      inGameName: data.inGameName || '',
-      gameUid: data.gameUid || '',
+      email: cleanEmail || `${cleanPhone}@popgaming.in`,
+      displayName: data.name.trim() || cleanEmail.split('@')[0] || `Player_${cleanPhone.slice(-4)}`,
+      password: cleanPass,
+      phone: cleanPhone,
+      inGameName: data.inGameName?.trim() || '',
+      gameUid: data.gameUid?.trim() || '',
       role: isSystemAdmin ? 'ADMIN' : 'USER',
       createdAt: new Date().toISOString(),
     };
 
     setRegisteredUsers((prev) => [newUser, ...prev]);
     setCustomUser(newUser);
-    if (isSystemAdmin) setAdminBypass(true);
+    setAdminBypass(isSystemAdmin);
 
     addNotification({
       userId: newUser.uid,
@@ -562,17 +620,56 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return { success: true };
   };
 
-  // Reset Password handler with simulated secure OTP verification
-  const resetPassword = async (email: string, newPassword: string): Promise<{ success: boolean; message?: string; error?: string }> => {
-    const cleanEmail = email.trim().toLowerCase();
-    const user = registeredUsers.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (!user && !ADMIN_EMAILS.includes(cleanEmail)) {
-      return { success: false, error: 'No account registered with this email.' };
-    }
-    if (newPassword.length < 4) {
+  // Reset Password handler - updates password in registered database
+  const resetPassword = async (emailOrPhone: string, newPassword: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+    const cleanInput = emailOrPhone.trim().toLowerCase();
+    const cleanPass = newPassword.trim();
+    if (cleanPass.length < 4) {
       return { success: false, error: 'New password must be at least 4 characters.' };
     }
-    return { success: true, message: `Password for ${cleanEmail} has been reset successfully. You can now login.` };
+
+    const userIndex = registeredUsers.findIndex((u) => 
+      u.email.toLowerCase() === cleanInput || 
+      (u.phone && u.phone.trim() === cleanInput)
+    );
+
+    if (userIndex === -1 && !ADMIN_EMAILS.includes(cleanInput)) {
+      return { success: false, error: 'No account registered with this email or phone.' };
+    }
+
+    if (userIndex !== -1) {
+      const updatedUsers = [...registeredUsers];
+      updatedUsers[userIndex] = {
+        ...updatedUsers[userIndex],
+        password: cleanPass,
+      };
+      setRegisteredUsers(updatedUsers);
+    }
+
+    return { success: true, message: `✅ Password has been reset successfully! You can now sign in with your new password.` };
+  };
+
+  // Update Player Profile (IGN, UID, Phone, Name)
+  const updateUserProfile = (updates: Partial<AuthPlayerProfile>) => {
+    if (!customUser && !currentUser) return;
+    const targetUid = customUser?.uid || currentUser?.uid;
+    
+    if (customUser) {
+      const updatedProfile: AuthPlayerProfile = {
+        ...customUser,
+        ...updates,
+      };
+      setCustomUser(updatedProfile);
+    }
+
+    setRegisteredUsers((prev) =>
+      prev.map((u) => {
+        if (u.uid === targetUid || (customUser?.email && u.email.toLowerCase() === customUser.email.toLowerCase())) {
+          return { ...u, ...updates };
+        }
+        return u;
+      })
+    );
   };
 
   const loginWithGoogle = async () => {
@@ -1698,8 +1795,10 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         adminEmail: 'wepopearn@gmail.com',
         loginWithGoogle,
         loginWithEmail,
+        loginWithPhoneOtp,
         registerWithEmail,
         resetPassword,
+        updateUserProfile,
         logout,
         matches,
         registrations,

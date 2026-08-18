@@ -19,7 +19,12 @@ import {
   Sparkles,
   LogIn,
   ArrowRight,
-  Gamepad2
+  Gamepad2,
+  Mail,
+  Copy,
+  Edit3,
+  Save,
+  Check
 } from 'lucide-react';
 import { useTournaments } from '../context/TournamentContext';
 import { WalletSection } from './WalletSection';
@@ -35,6 +40,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onOpenLoginModal }) =>
   const { 
     currentUser, 
     customUser,
+    isAdmin,
     registrations, 
     results, 
     logout, 
@@ -43,18 +49,50 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onOpenLoginModal }) =>
     notifications,
     markNotificationAsRead,
     markAllNotificationsAsRead,
-    unreadNotificationsCount
+    unreadNotificationsCount,
+    updateUserProfile,
   } = useTournaments();
 
-  const [activeSubTab, setActiveSubTab] = useState<'WALLET' | 'PASSPORT' | 'MATCHES' | 'NOTIFICATIONS' | 'ACCOUNT'>('WALLET');
+  const [activeSubTab, setActiveSubTab] = useState<'WALLET' | 'PASSPORT' | 'MATCHES' | 'NOTIFICATIONS' | 'ACCOUNT'>('ACCOUNT');
+  const [isEditing, setIsEditing] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const isLoggedIn = Boolean(customUser || currentUser);
-  const activeUid = customUser?.uid || currentUser?.uid;
+  const activeUid = customUser?.uid || currentUser?.uid || 'user-guest';
   const activeEmail = (customUser?.email || currentUser?.email || '').toLowerCase();
   const displayName = customUser?.displayName || currentUser?.displayName || (activeEmail ? activeEmail.split('@')[0] : 'Player');
-  const gameUid = customUser?.gameUid || 'Not Linked';
+  const gameUid = customUser?.gameUid || '';
   const inGameName = customUser?.inGameName || displayName;
   const phone = customUser?.phone || '';
+  const joinDate = customUser?.createdAt ? new Date(customUser.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }) : 'Verified Member';
+
+  // Edit state
+  const [editName, setEditName] = useState(displayName);
+  const [editPhone, setEditPhone] = useState(phone);
+  const [editGameUid, setEditGameUid] = useState(gameUid);
+  const [editInGameName, setEditInGameName] = useState(inGameName);
+
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    soundFx.playClick();
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateUserProfile({
+      displayName: editName.trim() || displayName,
+      phone: editPhone.trim() || phone,
+      gameUid: editGameUid.trim() || gameUid,
+      inGameName: editInGameName.trim() || inGameName,
+    });
+    soundFx.playSuccess();
+    setIsEditing(false);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
 
   const stats = getUserWalletStats();
 
@@ -157,42 +195,91 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onOpenLoginModal }) =>
   return (
     <div id="profile-view" className="space-y-8 pb-16">
       {/* Profile Card Header */}
-      <div className="rounded-3xl bg-neutral-900 border border-neutral-800 p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-start justify-between gap-6 shadow-xl">
-        <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500 via-amber-500 to-red-600 flex items-center justify-center text-white text-2xl font-black shadow-lg shadow-orange-500/20 border border-orange-400/40">
+      <div className="rounded-3xl bg-neutral-900 border border-neutral-800 p-6 sm:p-8 flex flex-col md:flex-row items-center md:items-start justify-between gap-6 shadow-xl relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-orange-500 via-amber-500 to-red-600 flex items-center justify-center text-white text-3xl font-black shadow-lg shadow-orange-500/20 border border-orange-400/40 flex-shrink-0">
             {displayName ? displayName[0].toUpperCase() : 'P'}
           </div>
-          <div>
-            <div className="flex items-center justify-center sm:justify-start gap-2">
-              <h1 className="text-xl font-black text-white">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+              <h1 className="text-xl sm:text-2xl font-black text-white">
                 {displayName}
               </h1>
-              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
-                PRO VERIFIED
-              </span>
+              {isAdmin ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px] font-black border border-red-500/30 uppercase tracking-wider">
+                  MASTER ADMIN
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  VERIFIED PLAYER
+                </span>
+              )}
             </div>
-            <p className="text-xs text-neutral-400 font-mono mt-0.5">
-              {activeEmail}
-            </p>
-            <div className="flex items-center gap-2 mt-2">
-              <span className="px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-300 text-[11px] font-mono">
-                UID: {gameUid}
-              </span>
-              <span className="text-[11px] text-neutral-500">Tier: Grandmaster S9</span>
+
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-xs text-neutral-400">
+              {activeEmail && (
+                <div className="flex items-center gap-1.5 font-mono">
+                  <Mail className="w-3.5 h-3.5 text-neutral-500" />
+                  <span>{activeEmail}</span>
+                </div>
+              )}
+              {phone && (
+                <div className="flex items-center gap-1.5 font-mono text-emerald-400">
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>+91 {phone}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+              <div className="px-2.5 py-1 rounded-lg bg-neutral-950 border border-neutral-800 text-neutral-300 text-[11px] font-mono flex items-center gap-1.5">
+                <span className="text-neutral-500">FF UID:</span>
+                <span className="font-bold text-orange-400">{gameUid || 'Not Set'}</span>
+                {gameUid && (
+                  <button 
+                    onClick={() => handleCopy(gameUid, 'header-uid')}
+                    className="hover:text-white text-neutral-500 cursor-pointer ml-0.5"
+                    title="Copy Free Fire UID"
+                  >
+                    {copiedKey === 'header-uid' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                )}
+              </div>
+              <div className="px-2.5 py-1 rounded-lg bg-neutral-950 border border-neutral-800 text-[11px] text-neutral-400">
+                IGN: <span className="font-bold text-white">{inGameName || displayName}</span>
+              </div>
+              <div className="px-2.5 py-1 rounded-lg bg-neutral-950 border border-neutral-800 text-[11px] text-neutral-500">
+                Joined: {joinDate}
+              </div>
             </div>
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            soundFx.playClick();
-            logout();
-          }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-xs cursor-pointer border border-neutral-700 transition"
-        >
-          <LogOut className="w-4 h-4 text-red-400" />
-          <span>Sign Out</span>
-        </button>
+        <div className="flex flex-col sm:flex-row md:flex-col items-center gap-2 w-full md:w-auto">
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              setActiveSubTab('ACCOUNT');
+              setIsEditing(true);
+            }}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-orange-600/10 hover:bg-orange-600/20 text-orange-400 font-bold text-xs cursor-pointer border border-orange-500/30 transition"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>Edit Account Details</span>
+          </button>
+
+          <button
+            onClick={() => {
+              soundFx.playClick();
+              logout();
+            }}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-xs cursor-pointer border border-neutral-700 transition"
+          >
+            <LogOut className="w-3.5 h-3.5 text-red-400" />
+            <span>Sign Out</span>
+          </button>
+        </div>
       </div>
 
       {/* Player Career Stats */}
@@ -463,60 +550,220 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onOpenLoginModal }) =>
         </div>
       )}
 
-      {/* Tab Content 4: Account Settings */}
+      {/* Tab Content 4: Account Details & Settings */}
       {activeSubTab === 'ACCOUNT' && (
-        <div className="p-6 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-6">
-          <h2 className="text-lg font-black text-white uppercase tracking-tight">
-            Player Profile & Game Credentials
-          </h2>
+        <div className="space-y-6">
+          <div className="p-6 sm:p-8 rounded-3xl bg-neutral-900 border border-neutral-800 space-y-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-800 pb-5">
+              <div>
+                <h2 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-2">
+                  <User className="w-5 h-5 text-orange-500" />
+                  <span>My Account Details</span>
+                </h2>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Your registered account credentials, Free Fire gaming identifiers, and wallet access.
+                </p>
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-neutral-400">Full Name</label>
-              <input
-                type="text"
-                readOnly
-                value={displayName}
-                className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white text-xs font-bold"
-              />
+              {!isEditing ? (
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    setEditName(displayName);
+                    setEditPhone(phone);
+                    setEditGameUid(gameUid);
+                    setEditInGameName(inGameName);
+                    setIsEditing(true);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-extrabold text-xs transition cursor-pointer shadow-lg shadow-orange-500/20"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Profile</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    soundFx.playClick();
+                    setIsEditing(false);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-xs transition cursor-pointer"
+                >
+                  <span>Cancel</span>
+                </button>
+              )}
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-neutral-400">Registered Email</label>
-              <input
-                type="text"
-                readOnly
-                value={activeEmail}
-                className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white font-mono text-xs"
-              />
-            </div>
+            {saveSuccess && (
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <span>Your account details have been updated successfully!</span>
+              </div>
+            )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-neutral-400">Free Fire Game UID</label>
-              <input
-                type="text"
-                readOnly
-                value={gameUid}
-                className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white font-mono text-xs font-bold"
-              />
-            </div>
+            {isEditing ? (
+              <form onSubmit={handleSaveProfile} className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-neutral-300">Full Name / Display Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white text-xs font-bold focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-neutral-400">In-Game Name (IGN)</label>
-              <input
-                type="text"
-                readOnly
-                value={inGameName}
-                className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white font-mono text-xs text-orange-400 font-bold"
-              />
-            </div>
-          </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-neutral-300">Mobile Number (10-digit)</label>
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      placeholder="9876543210"
+                      className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
 
-          <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-400 space-y-1">
-            <span className="font-bold text-white block">POP Gaming Fair Play Assurance:</span>
-            <p>
-              Emulators, scripts, or game modifications are strictly prohibited and result in permanent ban and prize forfeiture.
-            </p>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-neutral-300">Free Fire Game UID</label>
+                    <input
+                      type="text"
+                      value={editGameUid}
+                      onChange={(e) => setEditGameUid(e.target.value)}
+                      placeholder="e.g. 1928374650"
+                      className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-neutral-300">In-Game Name (IGN)</label>
+                    <input
+                      type="text"
+                      value={editInGameName}
+                      onChange={(e) => setEditInGameName(e.target.value)}
+                      placeholder="e.g. POP_LEGEND"
+                      className="w-full px-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white font-mono text-xs focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="px-5 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-lg shadow-emerald-600/20"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Save Profile Changes</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* 1. Account UID */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Account UID</span>
+                    <button
+                      onClick={() => handleCopy(activeUid, 'account-uid')}
+                      className="text-neutral-500 hover:text-white transition cursor-pointer"
+                      title="Copy UID"
+                    >
+                      {copiedKey === 'account-uid' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <p className="text-xs font-mono font-bold text-white break-all">{activeUid}</p>
+                </div>
+
+                {/* 2. Full Name */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Full Name</span>
+                  <p className="text-sm font-bold text-white">{displayName}</p>
+                </div>
+
+                {/* 3. Registered Email */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Registered Email</span>
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">VERIFIED</span>
+                  </div>
+                  <p className="text-xs font-mono font-semibold text-white truncate">{activeEmail || 'Not Linked'}</p>
+                </div>
+
+                {/* 4. Registered Mobile */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Mobile Number</span>
+                    {phone && <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">VERIFIED</span>}
+                  </div>
+                  <p className="text-xs font-mono font-semibold text-white">
+                    {phone ? `+91 ${phone}` : 'Not Linked (Click Edit Profile)'}
+                  </p>
+                </div>
+
+                {/* 5. Free Fire Game UID */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Free Fire UID</span>
+                    {gameUid && (
+                      <button
+                        onClick={() => handleCopy(gameUid, 'ff-uid')}
+                        className="text-neutral-500 hover:text-white transition cursor-pointer"
+                        title="Copy Free Fire UID"
+                      >
+                        {copiedKey === 'ff-uid' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs font-mono font-bold text-orange-400">{gameUid || 'Not Set'}</p>
+                </div>
+
+                {/* 6. In-Game Name (IGN) */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">In-Game Name (IGN)</span>
+                  <p className="text-xs font-mono font-bold text-amber-400">{inGameName || displayName}</p>
+                </div>
+
+                {/* 7. Role & Access */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Access Role</span>
+                  <p className="text-xs font-bold text-emerald-400">{isAdmin ? '👑 Master Administrator' : '🎮 Verified Esports Player'}</p>
+                </div>
+
+                {/* 8. Registration Date */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Member Since</span>
+                  <p className="text-xs font-mono text-neutral-300">{joinDate}</p>
+                </div>
+
+                {/* 9. Fair Play Status */}
+                <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800/80 space-y-1.5">
+                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Fair Play Rating</span>
+                  <p className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>100% Anti-Cheat Verified</span>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-400 space-y-1.5">
+              <span className="font-bold text-white flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-orange-500" />
+                POP Gaming Esports Security & Fair Play Policy:
+              </span>
+              <p>
+                Your account is protected with email and mobile verification. Only you can join matches with your Free Fire Game UID. Use of mods, emulator bypasses, or teaming in solo modes results in instant disqualification and wallet freeze.
+              </p>
+            </div>
           </div>
         </div>
       )}

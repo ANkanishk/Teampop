@@ -243,6 +243,7 @@ export interface AuthPlayerProfile {
   uid: string;
   email: string;
   displayName: string;
+  password?: string;
   name?: string;
   phone?: string;
   inGameName?: string;
