@@ -395,10 +395,8 @@ function generateConfirmationEmailHtml(data: RegistrationApprovalPayload): strin
   `;
 }
 
-async function startServer() {
+export function createApp() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -1090,6 +1088,13 @@ async function startServer() {
     }
   });
 
+  return app;
+}
+
+export async function startServer() {
+  const app = createApp();
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
   // Vite middleware for development vs Static serving in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -1110,6 +1115,9 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Fatal Server Boot Error:', err);
-});
+// Only start standalone server when not in serverless mode
+if (process.env.NETLIFY !== 'true') {
+  startServer().catch((err) => {
+    console.error('Fatal Server Boot Error:', err);
+  });
+}
