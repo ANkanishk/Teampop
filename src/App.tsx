@@ -122,7 +122,7 @@ function MainApp() {
     updateMetaTag('og:description', currentInfo.desc);
     
     // Dynamic Share Banner: uses admin uploaded logo or custom banner if available, fallback to default esports banner
-    const shareBannerUrl = settings.appLogo || (settings.heroSlides && settings.heroSlides[0]?.imageUrl) || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80';
+    const shareBannerUrl = settings.appLogo || (settings.heroSlides && settings.heroSlides[0]?.image) || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80';
     updateMetaTag('og:image', shareBannerUrl);
     
     // Update Twitter card tags
