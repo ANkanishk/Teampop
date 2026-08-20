@@ -207,7 +207,7 @@ export const AdminVideoTutorialManager: React.FC = () => {
             </div>
 
             {generalVideoUrl && (
-              <div className="mt-3 aspect-video rounded-lg overflow-hidden border border-neutral-700 bg-black">
+              <div className="mt-3 aspect-video rounded-lg overflow-hidden border border-neutral-700 bg-black flex items-center justify-center">
                 {generalVideoUrl.includes('youtube') || generalVideoUrl.includes('youtu.be') ? (
                   <iframe
                     src={generalVideoUrl.includes('embed') ? generalVideoUrl : `https://www.youtube.com/embed/${new URL(generalVideoUrl.startsWith('http') ? generalVideoUrl : `https://${generalVideoUrl}`).searchParams.get('v') || ''}`}
@@ -216,7 +216,7 @@ export const AdminVideoTutorialManager: React.FC = () => {
                     allowFullScreen
                   />
                 ) : (
-                  <video src={generalVideoUrl} controls className="w-full h-full object-cover" />
+                  <video src={generalVideoUrl} controls className="w-full h-full object-contain mx-auto bg-black" />
                 )}
               </div>
             )}
@@ -275,7 +275,7 @@ export const AdminVideoTutorialManager: React.FC = () => {
             </div>
 
             {loginVideoUrl && (
-              <div className="mt-3 aspect-video rounded-lg overflow-hidden border border-neutral-700 bg-black">
+              <div className="mt-3 aspect-video rounded-lg overflow-hidden border border-neutral-700 bg-black flex items-center justify-center">
                 {loginVideoUrl.includes('youtube') || loginVideoUrl.includes('youtu.be') ? (
                   <iframe
                     src={loginVideoUrl.includes('embed') ? loginVideoUrl : `https://www.youtube.com/embed/${new URL(loginVideoUrl.startsWith('http') ? loginVideoUrl : `https://${loginVideoUrl}`).searchParams.get('v') || ''}`}
@@ -284,7 +284,7 @@ export const AdminVideoTutorialManager: React.FC = () => {
                     allowFullScreen
                   />
                 ) : (
-                  <video src={loginVideoUrl} controls className="w-full h-full object-cover" />
+                  <video src={loginVideoUrl} controls className="w-full h-full object-contain mx-auto bg-black" />
                 )}
               </div>
             )}
