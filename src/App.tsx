@@ -17,9 +17,13 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { RegistrationModal } from './components/RegistrationModal';
 import { TrackMatchModal } from './components/TrackMatchModal';
 import { LoginModal } from './components/LoginModal';
+import { Gaming3DLoader } from './components/Gaming3DLoader';
 import { Match, GameModeId } from './types';
 import { Trophy, ShieldCheck, Smartphone, Mail, Heart, Send, ExternalLink } from 'lucide-react';
 import { soundFx } from './lib/soundEffects';
+
+import { InAppBrowserAlert } from './components/InAppBrowserAlert';
+import { BgmPlayerWidget } from './components/BgmPlayerWidget';
 
 function updateMetaTag(propertyOrName: string, content: string, isNameAttr = false) {
   const selector = isNameAttr ? `meta[name="${propertyOrName}"]` : `meta[property="${propertyOrName}"]`;
@@ -42,7 +46,26 @@ function MainApp() {
   const [trackModalOpen, setTrackModalOpen] = useState<boolean>(false);
   const [trackInitialRegId, setTrackInitialRegId] = useState<string>('');
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
+  const [appBooting, setAppBooting] = useState<boolean>(() => {
+    try {
+      return !sessionStorage.getItem('pop_booted_session');
+    } catch {
+      return false;
+    }
+  });
   const { settings } = useTournaments();
+
+  useEffect(() => {
+    if (appBooting) {
+      const timer = setTimeout(() => {
+        setAppBooting(false);
+        try {
+          sessionStorage.setItem('pop_booted_session', 'true');
+        } catch {}
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [appBooting]);
 
   // Dynamic SEO Title & Open Graph Meta Updater
   useEffect(() => {
@@ -97,10 +120,16 @@ function MainApp() {
     // Update Open Graph tags for Facebook / WhatsApp preview
     updateMetaTag('og:title', currentInfo.title);
     updateMetaTag('og:description', currentInfo.desc);
+    
+    // Dynamic Share Banner: uses admin uploaded logo or custom banner if available, fallback to default esports banner
+    const shareBannerUrl = settings.appLogo || (settings.heroSlides && settings.heroSlides[0]?.imageUrl) || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1200&auto=format&fit=crop&q=80';
+    updateMetaTag('og:image', shareBannerUrl);
+    
     // Update Twitter card tags
     updateMetaTag('twitter:title', currentInfo.title, true);
     updateMetaTag('twitter:description', currentInfo.desc, true);
-  }, [currentTab]);
+    updateMetaTag('twitter:image', shareBannerUrl, true);
+  }, [currentTab, settings.appLogo, settings.heroSlides]);
 
   const handleSelectMatch = (match: Match) => {
     soundFx.playClick();
@@ -119,7 +148,19 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-orange-500 selection:text-white">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-neutral-950 text-neutral-100 flex flex-col selection:bg-orange-500 selection:text-white relative">
+      {/* 3D Gaming Console Initial Bootloader */}
+      {appBooting && (
+        <Gaming3DLoader
+          fullScreen
+          statusText="INITIALIZING POP ESPORTS ARENA"
+          subText="Connecting to Free Fire competitive servers, daily rooms & anti-cheat shield..."
+        />
+      )}
+
+      {/* Instagram / In-App Browser Detection Banner */}
+      <InAppBrowserAlert />
+
       {/* Top Navbar */}
       <Navbar
         currentTab={currentTab}
@@ -136,7 +177,7 @@ function MainApp() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-28 lg:pb-12">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-8 pb-28 lg:pb-12 overflow-x-hidden">
         {currentTab === 'home' && (
           <HomeView
             onSelectMatch={handleSelectMatch}
@@ -304,6 +345,9 @@ function MainApp() {
           }}
         />
       )}
+
+      {/* Global Background Music Float Widget */}
+      <BgmPlayerWidget />
     </div>
   );
 }

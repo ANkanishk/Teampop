@@ -249,46 +249,93 @@ export const WalletSection: React.FC = () => {
         </div>
 
         {/* Breakdown Sub-Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-6 pt-6 border-t border-neutral-800/80">
-          <div className="p-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/60 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-semibold text-neutral-400 block uppercase">
-                Available Winnings (Cashout)
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-3.5 mt-6 pt-6 border-t border-neutral-800/80">
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/60 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] sm:text-[11px] font-semibold text-neutral-400 uppercase">
+                Withdrawable Winnings
               </span>
-              <span className="text-xl font-black text-emerald-400">
-                ₹{stats.winningsBalance}
-              </span>
+              <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+                <Trophy className="w-4 h-4" />
+              </div>
             </div>
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
-              <Trophy className="w-5 h-5" />
-            </div>
+            <span className="text-xl sm:text-2xl font-black text-emerald-400 mt-2">
+              ₹{stats.winningsBalance}
+            </span>
+            <span className="text-[10px] text-neutral-500 mt-1">Available for 1-click cashout</span>
           </div>
 
-          <div className="p-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/60 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-semibold text-neutral-400 block uppercase">
-                Pending Withdrawals
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/60 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] sm:text-[11px] font-semibold text-neutral-400 uppercase">
+                Deposit Balance
               </span>
-              <span className="text-xl font-black text-amber-400">
-                ₹{stats.pendingWithdrawalsAmount}
-              </span>
+              <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
             </div>
-            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400">
-              <Clock className="w-5 h-5" />
-            </div>
+            <span className="text-xl sm:text-2xl font-black text-cyan-400 mt-2">
+              ₹{stats.depositBalance}
+            </span>
+            <span className="text-[10px] text-neutral-500 mt-1">Play tournaments directly</span>
           </div>
 
-          <div className="p-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/60 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-semibold text-neutral-400 block uppercase">
-                Total Match Deposits Paid
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/60 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] sm:text-[11px] font-semibold text-neutral-400 uppercase">
+                Bonus & Rewards
               </span>
-              <span className="text-xl font-black text-cyan-400">
-                ₹{stats.depositBalance}
-              </span>
+              <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400">
+                <Sparkles className="w-4 h-4" />
+              </div>
             </div>
-            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400">
-              <ShieldCheck className="w-5 h-5" />
+            <span className="text-xl sm:text-2xl font-black text-amber-400 mt-2">
+              ₹{stats.bonusBalance || (customUser?.bonusBalance ?? 20)}
+            </span>
+            <span className="text-[10px] text-neutral-500 mt-1">1st Match ₹20 + Referrals</span>
+          </div>
+
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-neutral-950/60 border border-neutral-800/60 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] sm:text-[11px] font-semibold text-neutral-400 uppercase">
+                Pending Cashouts
+              </span>
+              <div className="p-1.5 rounded-lg bg-orange-500/10 text-orange-400">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <span className="text-xl sm:text-2xl font-black text-orange-400 mt-2">
+              ₹{stats.pendingWithdrawalsAmount}
+            </span>
+            <span className="text-[10px] text-neutral-500 mt-1">Under admin transfer verification</span>
+          </div>
+        </div>
+
+        {/* Bonus Unlock Banner */}
+        <div className="mt-4 p-3.5 rounded-2xl bg-neutral-950/70 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 shrink-0 mt-0.5">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-neutral-200">
+                First-Time ₹20 Welcome Bonus Terms
+              </p>
+              <p className="text-[11px] text-neutral-400 leading-relaxed">
+                Use your ₹20 bonus to join matches. When you deposit your own money and win ₹{settings.bonusUnlockWinningTarget || 200}+ in tournament prizes, you can withdraw your full winnings plus bonus (Total ₹{(settings.bonusUnlockWinningTarget || 200) + 20}+)!
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="text-right">
+              <span className="text-[10px] text-neutral-400 font-semibold block">Winnings Progress</span>
+              <span className="text-xs font-mono font-bold text-amber-400">₹{stats.totalWonAmount} / ₹{settings.bonusUnlockWinningTarget || 200}</span>
+            </div>
+            <div className="w-16 h-2 rounded-full bg-neutral-800 overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-amber-500 to-emerald-500 transition-all"
+                style={{ width: `${Math.min(100, Math.round((stats.totalWonAmount / (settings.bonusUnlockWinningTarget || 200)) * 100))}%` }}
+              />
             </div>
           </div>
         </div>
@@ -335,6 +382,19 @@ export const WalletSection: React.FC = () => {
             >
               <Trophy className="w-3.5 h-3.5" />
               <span>Tournament Rewards</span>
+            </button>
+
+            <button
+              id="tab-all-txs"
+              onClick={() => setActiveTab('ALL_TXS')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'ALL_TXS'
+                  ? 'bg-neutral-800 text-orange-400 border border-orange-500/30'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Full Ledger</span>
             </button>
           </div>
 
@@ -509,6 +569,54 @@ export const WalletSection: React.FC = () => {
                     </div>
                   </div>
                 ))
+            )}
+          </div>
+        )}
+
+        {/* Tab 4: Full Ledger Transactions */}
+        {activeTab === 'ALL_TXS' && (
+          <div className="space-y-3">
+            {walletTransactions.length === 0 ? (
+              <div className="p-8 text-center rounded-2xl bg-neutral-900 border border-neutral-800 text-neutral-400 space-y-2">
+                <History className="w-8 h-8 mx-auto text-neutral-600" />
+                <p className="text-sm font-semibold text-neutral-300">No ledger transactions found</p>
+              </div>
+            ) : (
+              walletTransactions.map((tx) => {
+                const isPositive = tx.type === 'PRIZE_WON' || tx.type === 'ADMIN_CREDIT' || tx.type === 'BONUS' || tx.type === 'SIGNUP_BONUS' || tx.type === 'REFERRAL_BONUS' || tx.type === 'DEPOSIT' || tx.type === 'WITHDRAWAL_REFUND';
+                return (
+                  <div
+                    key={tx.id}
+                    className="p-4 sm:p-5 rounded-2xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-between gap-4"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                          tx.type === 'PRIZE_WON' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                          tx.type === 'SIGNUP_BONUS' || tx.type === 'REFERRAL_BONUS' || tx.type === 'BONUS' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+                          tx.type === 'WITHDRAWAL_REQUEST' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                          'bg-neutral-800 text-neutral-300'
+                        }`}>
+                          {tx.type.replace(/_/g, ' ')}
+                        </span>
+                        <span className="text-xs text-neutral-500 font-mono">
+                          {new Date(tx.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-white">{tx.description}</p>
+                    </div>
+
+                    <div className="text-right">
+                      <span className={`text-lg font-black block ${isPositive ? 'text-emerald-400' : 'text-orange-400'}`}>
+                        {isPositive ? '+' : '-'}₹{Math.abs(tx.amount)}
+                      </span>
+                      <span className="text-[10px] text-neutral-500 font-bold uppercase">
+                        {tx.status}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         )}

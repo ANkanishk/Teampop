@@ -22,6 +22,7 @@ import { Match, GameModeId, UpiAppConfig } from '../types';
 import { useTournaments } from '../context/TournamentContext';
 import { getPerKillReward, calculateBRPlacementRewards } from '../data/tournamentData';
 import { INITIAL_UPI_APPS, buildUpiDeepLink } from '../data/upiAppsData';
+import { Gaming3DLoader } from './Gaming3DLoader';
 
 export const triggerConfettiCelebration = () => {
   try {
@@ -195,26 +196,6 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
       });
 
       setCreatedRegId(reg.id);
-
-      // Trigger automatic email alert to admin email wepopearn@gmail.com
-      try {
-        fetch('/api/notifications/payment-submitted', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            registrationId: reg.id,
-            matchTitle: match.title,
-            entryFee: match.entryFee,
-            totalPayable: match.entryFee,
-            utrNumber,
-            captainName,
-            captainPhone,
-            captainEmail,
-            players,
-          }),
-        }).catch(() => {});
-      } catch (_) {}
-
       setStep('SUCCESS');
       triggerConfettiCelebration();
     } catch (err: any) {
@@ -317,7 +298,17 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6">
+        <div className="p-6 relative">
+          {/* 3D Console Loader Overlay during Submission */}
+          {isSubmitting && (
+            <div className="absolute inset-0 z-50 bg-neutral-950/95 backdrop-blur-md rounded-2xl flex items-center justify-center p-4">
+              <Gaming3DLoader
+                statusText="LOCKING TOURNAMENT SLOT"
+                subText="Registering team roster, verifying UTR & generating entry pass..."
+              />
+            </div>
+          )}
+
           {formError && (
             <div className="mb-4 p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -435,6 +426,15 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                       onChange={(e) => {
                         setCaptainEmail(e.target.value);
                         handlePlayerChange(0, 'email', e.target.value);
+                      }}
+                      onBlur={(e) => {
+                        let val = e.target.value.trim().toLowerCase();
+                        val = val.replace(/@gmail\.co$/i, '@gmail.com');
+                        val = val.replace(/@gmail\.con$/i, '@gmail.com');
+                        val = val.replace(/@gmail\.comm$/i, '@gmail.com');
+                        val = val.replace(/@gmail\.cmo$/i, '@gmail.com');
+                        setCaptainEmail(val);
+                        handlePlayerChange(0, 'email', val);
                       }}
                       className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
                     />

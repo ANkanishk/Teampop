@@ -42,15 +42,24 @@ import { Image as ImageIcon, QrCode, Sparkles, Mail, ArrowUpRight, Megaphone, Sm
 import { GlobalAnnouncementsManager } from './GlobalAnnouncementsManager';
 import { UpiAppsManager } from './UpiAppsManager';
 import { AdminAnalyticsDashboard } from './AdminAnalyticsDashboard';
+import { AdminUsersListManager } from './AdminUsersListManager';
+import { AdminVideoTutorialManager } from './AdminVideoTutorialManager';
+import { AdminReferralsManager } from './AdminReferralsManager';
+import { Video, UserCheck, Gift, Music } from 'lucide-react';
+import { dispatchRoomCredentialsNotification } from '../lib/notificationService';
+import { AdminBgmManager } from './AdminBgmManager';
 
 export const AdminPanelView: React.FC = () => {
   const {
+    isAdmin,
     matches,
     registrations,
     results,
     settings,
     withdrawals,
     walletTransactions,
+    registeredUsers,
+    registeredUsersCount,
     updateSettings,
     createMatch,
     updateMatch,
@@ -65,8 +74,22 @@ export const AdminPanelView: React.FC = () => {
   } = useTournaments();
 
   const [activeTab, setActiveTab] = useState<
-    'DASHBOARD' | 'USER_WALLETS' | 'MEDIA_MANAGER' | 'UPI_APPS' | 'REGISTRATIONS' | 'WITHDRAWALS' | 'ANNOUNCEMENTS' | 'EMAIL_NOTIFICATIONS' | 'MATCHES' | 'RESULTS_ENTRY' | 'FINANCIAL_CALC' | 'SETTINGS'
+    'DASHBOARD' | 'USERS_LIST' | 'USER_WALLETS' | 'REFERRALS' | 'BGM_MANAGER' | 'VIDEO_TUTORIALS' | 'MEDIA_MANAGER' | 'UPI_APPS' | 'REGISTRATIONS' | 'WITHDRAWALS' | 'ANNOUNCEMENTS' | 'EMAIL_NOTIFICATIONS' | 'MATCHES' | 'RESULTS_ENTRY' | 'FINANCIAL_CALC' | 'SETTINGS'
   >('DASHBOARD');
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-md mx-auto py-20 px-4 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center mx-auto mb-4 text-neutral-500 shadow-xl">
+          <Lock className="w-8 h-8" />
+        </div>
+        <h2 className="text-lg font-black text-white uppercase tracking-tight mb-2">Access Restricted</h2>
+        <p className="text-xs text-neutral-400 leading-relaxed mb-6">
+          This section is strictly reserved for POP Gaming Master Administrator. Please sign in with authorized administrator credentials.
+        </p>
+      </div>
+    );
+  }
 
   const [showCleanDbModal, setShowCleanDbModal] = useState(false);
 
@@ -89,6 +112,27 @@ export const AdminPanelView: React.FC = () => {
   const [newMatchOnlyHeadshot, setNewMatchOnlyHeadshot] = useState<boolean>(false);
   const [newMatchRevivesAllowed, setNewMatchRevivesAllowed] = useState<boolean>(false);
   const [newMatchCustomNotes, setNewMatchCustomNotes] = useState<string>('');
+  const [newMatchFirstPrize, setNewMatchFirstPrize] = useState<number>(100);
+  const [newMatchSecondPrize, setNewMatchSecondPrize] = useState<number>(65);
+  const [newMatchThirdPrize, setNewMatchThirdPrize] = useState<number>(60);
+  const [newMatchPerKillPrize, setNewMatchPerKillPrize] = useState<number>(7);
+  const [newMatchCustomPrizeEnabled, setNewMatchCustomPrizeEnabled] = useState<boolean>(false);
+
+  // Helper to recalculate default prizes when entry fee or mode changes
+  const applyDefaultPrizes = (fee: number, mode: GameModeId) => {
+    const isDuel = isDuelOrLoneWolfMode(mode);
+    if (isDuel) {
+      setNewMatchFirstPrize(Math.round(fee * 1.5));
+      setNewMatchSecondPrize(0);
+      setNewMatchThirdPrize(0);
+      setNewMatchPerKillPrize(0);
+    } else {
+      setNewMatchFirstPrize(Math.round(fee * 2.0));
+      setNewMatchSecondPrize(Math.round(fee * 1.3));
+      setNewMatchThirdPrize(Math.round(fee * 1.2));
+      setNewMatchPerKillPrize(getPerKillReward(fee, mode));
+    }
+  };
 
   // Room credentials edit state
   const [selectedMatchForCreds, setSelectedMatchForCreds] = useState<Match | null>(null);
@@ -173,9 +217,21 @@ export const AdminPanelView: React.FC = () => {
   const handleCreateMatchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const isDuel = isDuelOrLoneWolfMode(newMatchMode);
-    const killBounty = isDuel ? 0 : getPerKillReward(newMatchEntry);
-    const placement = calculateBRPlacementRewards(newMatchEntry);
-    const duelPlacement = calculateDuelPlacementRewards(newMatchEntry);
+    const killBounty = newMatchCustomPrizeEnabled 
+      ? newMatchPerKillPrize 
+      : (isDuel ? 0 : getPerKillReward(newMatchEntry, newMatchMode));
+    
+    const firstPrize = newMatchCustomPrizeEnabled
+      ? newMatchFirstPrize
+      : (isDuel ? Math.round(newMatchEntry * 1.5) : Math.round(newMatchEntry * 2.0));
+    
+    const secondPrize = newMatchCustomPrizeEnabled
+      ? newMatchSecondPrize
+      : (isDuel ? 0 : Math.round(newMatchEntry * 1.3));
+
+    const thirdPrize = newMatchCustomPrizeEnabled
+      ? newMatchThirdPrize
+      : (isDuel ? 0 : Math.round(newMatchEntry * 1.2));
 
     const modeLabels: Record<GameModeId, string> = {
       'solo-br': 'BR Solo (1v1 Survival)',
@@ -192,15 +248,17 @@ export const AdminPanelView: React.FC = () => {
       'mega-championship': 'Mega 4-Day Championship',
     };
 
-    const notes = newMatchCustomNotes || (
+    const generatedTitle = newMatchTitle.trim() || `${modeLabels[newMatchMode] || 'Free Fire Match'} (₹${newMatchEntry})`;
+
+    const notes = newMatchCustomNotes.trim() || (
       isDuel
-        ? `Winner Payout: ₹${duelPlacement.first} (150% Return). ${newMatchOnlyHeadshot ? 'Only Headshot (Red Numbers) Allowed.' : ''} ${newMatchUnlimitedGloo ? 'Unlimited Gloo Wall active.' : ''}`
-        : `1st: ₹${placement.first}, 2nd: ₹${placement.second}, 3rd: ₹${placement.third} + ₹${killBounty}/kill bounty.`
+        ? `Winner Payout: ₹${firstPrize} (150% Return). ${newMatchOnlyHeadshot ? 'Only Headshot (Red Numbers) Allowed.' : ''} ${newMatchUnlimitedGloo ? 'Unlimited Gloo Wall active.' : ''}`
+        : `1st: ₹${firstPrize}, 2nd: ₹${secondPrize}, 3rd: ₹${thirdPrize} + ₹${killBounty}/kill bounty.`
     );
 
     createMatch({
       matchCode: `POP-${newMatchMode.toUpperCase().slice(0, 4)}-${newMatchEntry}-${Math.floor(10 + Math.random() * 90)}`,
-      title: newMatchTitle || `${modeLabels[newMatchMode]} (₹${newMatchEntry})`,
+      title: generatedTitle,
       gameMode: newMatchMode,
       gameModeName: modeLabels[newMatchMode] || newMatchMode.replace(/-/g, ' ').toUpperCase(),
       entryFee: Number(newMatchEntry),
@@ -221,11 +279,11 @@ export const AdminPanelView: React.FC = () => {
         customNotes: notes,
       },
       rewardConfig: {
-        firstPlaceMultiplier: isDuel ? 1.5 : 2.0,
-        secondPlaceMultiplier: isDuel ? 0 : 1.3,
-        thirdPlaceMultiplier: isDuel ? 0 : 1.2,
+        firstPlaceMultiplier: newMatchEntry > 0 ? Number((firstPrize / newMatchEntry).toFixed(2)) : 2.0,
+        secondPlaceMultiplier: newMatchEntry > 0 ? Number((secondPrize / newMatchEntry).toFixed(2)) : 1.3,
+        thirdPlaceMultiplier: newMatchEntry > 0 ? Number((thirdPrize / newMatchEntry).toFixed(2)) : 1.2,
         perKillReward: killBounty,
-        fixedWinnerPrize: isDuel ? duelPlacement.first : undefined,
+        fixedWinnerPrize: isDuel || newMatchCustomPrizeEnabled ? firstPrize : undefined,
       },
       credentialsReleased: false,
       bannerImage: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80',
@@ -234,19 +292,61 @@ export const AdminPanelView: React.FC = () => {
     setShowCreateModal(false);
     setNewMatchTitle('');
     setNewMatchCustomNotes('');
+    setSlotActionToast(`🎉 Successfully created & published "${generatedTitle}" to the lobby!`);
+    setTimeout(() => setSlotActionToast(null), 4000);
   };
 
-  const handleSaveCredentials = (e: React.FormEvent) => {
+  const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMatchForCreds) return;
-    updateMatch(selectedMatchForCreds.id, {
-      roomId: credsRoomId,
-      roomPassword: credsPassword,
+    const targetMatch = selectedMatchForCreds;
+    const matchId = targetMatch.id;
+    const code = targetMatch.matchCode;
+    const rId = credsRoomId.trim();
+    const rPass = credsPassword.trim();
+
+    updateMatch(matchId, {
+      roomId: rId,
+      roomPassword: rPass,
       credentialsReleased: true,
     });
     setSelectedMatchForCreds(null);
-    setSlotActionToast(`🔑 Room credentials released for ${selectedMatchForCreds.matchCode}!`);
-    setTimeout(() => setSlotActionToast(null), 3500);
+    setSlotActionToast(`🔑 Room credentials released for ${code}! Dispatching Gmail notification...`);
+
+    try {
+      const emailResult = await dispatchRoomCredentialsNotification({
+        matchId: matchId,
+        roomId: rId,
+        roomPassword: rPass,
+      });
+      if (emailResult.success) {
+        setSlotActionToast(`📧 Gmail Room Pass sent to ${emailResult.sentCount || 'all'} confirmed participants!`);
+      } else {
+        setSlotActionToast(`🔑 Room credentials updated. (${emailResult.message})`);
+      }
+    } catch (err: any) {
+      console.error('Email dispatch error:', err);
+    }
+    setTimeout(() => setSlotActionToast(null), 5000);
+  };
+
+  const handleDispatchCredentialsEmail = async (m: Match) => {
+    if (!m.roomId) {
+      alert('Please set Room ID and Room Password first before sending emails.');
+      return;
+    }
+    setSlotActionToast(`⏳ Sending Free Fire Room Pass to ${m.matchCode} players via Gmail...`);
+    try {
+      const res = await dispatchRoomCredentialsNotification({
+        matchId: m.id,
+        roomId: m.roomId,
+        roomPassword: m.roomPassword,
+      });
+      setSlotActionToast(res.success ? `📧 ${res.message}` : `⚠️ ${res.message}`);
+    } catch (e: any) {
+      setSlotActionToast(`⚠️ Failed to send: ${e.message}`);
+    }
+    setTimeout(() => setSlotActionToast(null), 5000);
   };
 
   const handleOpenEditMatch = (m: Match) => {
@@ -273,7 +373,7 @@ export const AdminPanelView: React.FC = () => {
     setEditMatchRevivesAllowed(m.rulesSnapshot?.revivesAllowed ?? false);
   };
 
-  const handleSaveEditMatch = (e: React.FormEvent) => {
+  const handleSaveEditMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMatch) return;
 
@@ -291,6 +391,8 @@ export const AdminPanelView: React.FC = () => {
       'monthly-championship': 'Monthly Grand Championship',
       'mega-championship': 'Mega 4-Day Championship',
     };
+
+    const isCredsUpdated = editMatchRoomId && (editMatchRoomId !== editingMatch.roomId || editMatchRoomPassword !== editingMatch.roomPassword);
 
     updateMatch(editingMatch.id, {
       title: editMatchTitle,
@@ -322,6 +424,17 @@ export const AdminPanelView: React.FC = () => {
         customNotes: editMatchNotes,
       },
     });
+
+    // If credentials were provided/updated, dispatch email automatically
+    if (isCredsUpdated || (editMatchRoomId && editMatchCredentialsReleased)) {
+      dispatchRoomCredentialsNotification({
+        matchId: editingMatch.id,
+        roomId: editMatchRoomId,
+        roomPassword: editMatchRoomPassword,
+        customNotes: editMatchNotes,
+      }).catch(console.error);
+    }
+
     setEditingMatch(null);
     setSlotActionToast(`✅ Match "${editMatchTitle}" & Game Rules successfully updated!`);
     setTimeout(() => setSlotActionToast(null), 4000);
@@ -468,7 +581,11 @@ export const AdminPanelView: React.FC = () => {
       <div className="flex flex-wrap gap-2 border-b border-neutral-800 pb-3">
         {[
           { id: 'DASHBOARD', label: 'Financial Dashboard', icon: TrendingUp },
+          { id: 'USERS_LIST', label: `Registered Players (${registeredUsersCount})`, icon: Users, highlight: true },
           { id: 'USER_WALLETS', label: `User Wallets & Deposit Approvals (${pendingDepositsCount})`, icon: Wallet, highlight: true },
+          { id: 'REFERRALS', label: 'Referral & ₹20 Bonus Engine', icon: Gift, highlight: true },
+          { id: 'BGM_MANAGER', label: 'Background Music & Audio', icon: Music, highlight: true },
+          { id: 'VIDEO_TUTORIALS', label: 'Video Tutorials & How-To', icon: Video, highlight: true },
           { id: 'UPI_APPS', label: 'UPI Payment Apps (POP, PhonePe, Paytm, GPay, Universal)', icon: Smartphone, highlight: true },
           { id: 'MEDIA_MANAGER', label: 'Logo, QR & Banners', icon: ImageIcon, highlight: true },
           { id: 'ANNOUNCEMENTS', label: 'Global Announcements', icon: Megaphone, highlight: true },
@@ -600,9 +717,29 @@ export const AdminPanelView: React.FC = () => {
         </div>
       )}
 
+      {/* TAB: REGISTERED PLAYERS & USERS MANAGEMENT */}
+      {activeTab === 'USERS_LIST' && (
+        <AdminUsersListManager />
+      )}
+
       {/* TAB: USER WALLETS & DIRECT ADJUSTMENTS */}
       {activeTab === 'USER_WALLETS' && (
         <AdminUserWalletsManager />
+      )}
+
+      {/* TAB: REFERRALS & WELCOME BONUS */}
+      {activeTab === 'REFERRALS' && (
+        <AdminReferralsManager />
+      )}
+
+      {/* TAB: BACKGROUND MUSIC & AUDIO ENGINE */}
+      {activeTab === 'BGM_MANAGER' && (
+        <AdminBgmManager />
+      )}
+
+      {/* TAB: VIDEO TUTORIALS & GUIDES */}
+      {activeTab === 'VIDEO_TUTORIALS' && (
+        <AdminVideoTutorialManager />
       )}
 
       {/* TAB: UPI APPS MANAGER (POP, PhonePe, Paytm, GPay, Any App) */}
@@ -874,6 +1011,17 @@ export const AdminPanelView: React.FC = () => {
                       <Key className="w-3.5 h-3.5 text-amber-400" />
                       <span>Room Pass</span>
                     </button>
+
+                    {m.roomId && (
+                      <button
+                        onClick={() => handleDispatchCredentialsEmail(m)}
+                        className="py-2 px-3 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-400 border border-emerald-500/30 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        title="Send Room ID & Password to all approved player emails"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Send Gmail</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => {
@@ -1374,6 +1522,7 @@ export const AdminPanelView: React.FC = () => {
                       if (m === 'cs-custom') {
                         setNewMatchUnlimitedGloo(true);
                       }
+                      applyDefaultPrizes(newMatchEntry, m);
                     }}
                     className="w-full px-3.5 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-white font-semibold"
                   >
@@ -1396,7 +1545,11 @@ export const AdminPanelView: React.FC = () => {
                   <label className="block font-semibold text-neutral-300 mb-1">Entry Fee (₹)</label>
                   <select
                     value={newMatchEntry}
-                    onChange={(e) => setNewMatchEntry(Number(e.target.value))}
+                    onChange={(e) => {
+                      const fee = Number(e.target.value);
+                      setNewMatchEntry(fee);
+                      applyDefaultPrizes(fee, newMatchMode);
+                    }}
                     className="w-full px-3.5 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-white font-bold"
                   >
                     {[20, 40, 50, 100, 200, 300, 400, 500, 1000].map((val) => (
@@ -1406,6 +1559,96 @@ export const AdminPanelView: React.FC = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Prize Pool & Rewards Selection Section */}
+              <div className="p-3.5 rounded-2xl bg-neutral-950 border border-orange-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-orange-400" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Prize Pool & Rewards Allocation
+                    </span>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newMatchCustomPrizeEnabled}
+                      onChange={(e) => {
+                        setNewMatchCustomPrizeEnabled(e.target.checked);
+                        if (!e.target.checked) {
+                          applyDefaultPrizes(newMatchEntry, newMatchMode);
+                        }
+                      }}
+                      className="rounded text-orange-600"
+                    />
+                    <span className="text-xs text-orange-300 font-semibold">Custom Prizes</span>
+                  </label>
+                </div>
+
+                {newMatchCustomPrizeEnabled ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-neutral-400 mb-1">1st Prize (₹)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={newMatchFirstPrize}
+                        onChange={(e) => setNewMatchFirstPrize(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 rounded-lg text-white font-bold text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-neutral-400 mb-1">2nd Prize (₹)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={newMatchSecondPrize}
+                        onChange={(e) => setNewMatchSecondPrize(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 rounded-lg text-white font-bold text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-neutral-400 mb-1">3rd Prize (₹)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={newMatchThirdPrize}
+                        onChange={(e) => setNewMatchThirdPrize(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 rounded-lg text-white font-bold text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-neutral-400 mb-1">Per Kill (₹)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={newMatchPerKillPrize}
+                        onChange={(e) => setNewMatchPerKillPrize(Number(e.target.value))}
+                        className="w-full px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 rounded-lg text-white font-bold text-xs"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-neutral-900/60 p-2.5 rounded-xl border border-neutral-800 text-xs">
+                    <div className="text-center">
+                      <span className="text-[10px] text-neutral-400 block font-medium">1st Place</span>
+                      <span className="font-bold text-orange-400 font-mono">₹{newMatchFirstPrize}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-[10px] text-neutral-400 block font-medium">2nd Place</span>
+                      <span className="font-bold text-neutral-200 font-mono">₹{newMatchSecondPrize}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-[10px] text-neutral-400 block font-medium">3rd Place</span>
+                      <span className="font-bold text-neutral-200 font-mono">₹{newMatchThirdPrize}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-[10px] text-neutral-400 block font-medium">Per Kill</span>
+                      <span className="font-bold text-cyan-400 font-mono">₹{newMatchPerKillPrize}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

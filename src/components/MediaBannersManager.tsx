@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useTournaments } from '../context/TournamentContext';
 import { SlideItem, PromoBanner, GameModeId } from '../types';
+import { uploadImageToServer } from '../lib/uploadHelper';
 
 export const MediaBannersManager: React.FC = () => {
   const { settings, updateSettings, matches, updateMatch } = useTournaments();
@@ -45,24 +46,23 @@ export const MediaBannersManager: React.FC = () => {
     setTimeout(() => setSaveSuccessMsg(null), 3000);
   };
 
-  // Upload image handler converting to base64 Data URL for instant persistence & preview
-  const handleFileUpload = (
+  // Upload image handler converting to server-hosted file or safe preview
+  const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>, 
-    callback: (dataUrl: string) => void
+    callback: (url: string) => void
   ) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('File size exceeds 5MB. Please choose a smaller image.');
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size exceeds 10MB. Please choose a smaller image.');
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === 'string') {
-          callback(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const uploadedUrl = await uploadImageToServer(file, 'banners');
+        callback(uploadedUrl);
+      } catch (err) {
+        console.error('Error uploading banner image', err);
+      }
     }
   };
 

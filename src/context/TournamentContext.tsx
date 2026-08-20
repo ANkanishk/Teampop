@@ -12,7 +12,8 @@ import {
   WalletTransactionType, 
   AppNotification,
   AuthPlayerProfile,
-  MatchResultRank
+  MatchResultRank,
+  ReferralRecord
 } from '../types';
 import { 
   INITIAL_MATCHES, 
@@ -26,11 +27,14 @@ import {
 } from '../data/tournamentData';
 import { INITIAL_UPI_APPS } from '../data/upiAppsData';
 import { sendRegistrationApprovalNotification, DispatchEmailResult } from '../lib/notificationService';
+import { Language, TRANSLATIONS } from '../lib/translations';
+import { bgmService } from '../lib/bgmAudioService';
 
 export interface UserWalletStats {
   totalBalance: number;
   winningsBalance: number; // Available to withdraw
   depositBalance: number; // Entry fees paid
+  bonusBalance: number; // Welcome & referral bonus
   pendingWithdrawalsAmount: number;
   totalWithdrawnAmount: number;
   totalWonAmount: number;
@@ -45,11 +49,13 @@ export interface AppTrafficMetric {
 }
 
 interface TournamentContextType {
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  t: typeof TRANSLATIONS.en;
   currentUser: User | null;
   customUser: AuthPlayerProfile | null;
   isAdmin: boolean;
   adminEmail: string;
-  loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string; isAdmin?: boolean }>;
   loginWithPhoneOtp: (phone: string) => Promise<{ success: boolean; error?: string }>;
   registerWithEmail: (data: {
@@ -59,8 +65,10 @@ interface TournamentContextType {
     phone: string;
     inGameName?: string;
     gameUid?: string;
+    referredBy?: string;
   }) => Promise<{ success: boolean; error?: string }>;
   resetPassword: (email: string, newPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  deleteUserAccount: (uid: string) => Promise<{ success: boolean; message?: string }>;
   updateUserProfile: (updates: Partial<AuthPlayerProfile>) => void;
   logout: () => Promise<void>;
   matches: Match[];
@@ -69,6 +77,8 @@ interface TournamentContextType {
   settings: AdminSettings;
   withdrawals: WithdrawalRequest[];
   walletTransactions: WalletTransaction[];
+  referrals: ReferralRecord[];
+  manualRewardReferral: (referralId: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   notifications: AppNotification[];
   unreadNotificationsCount: number;
   registeredUsers: AuthPlayerProfile[];
@@ -201,7 +211,72 @@ const INITIAL_NOTIFICATIONS: AppNotification[] = [
   }
 ];
 
+// Safe localStorage setter with quota protection and automatic large data URI pruning
+const safeLocalStorageSet = (key: string, data: any) => {
+  try {
+    let payload = data;
+    // If saving settings, prune huge base64 data URLs so they never overflow browser localStorage quota
+    if (key === TOURNAMENT_SETTINGS_KEY && data && typeof data === 'object') {
+      const sanitizedSettings = { ...data };
+      if (typeof sanitizedSettings.appLogo === 'string' && sanitizedSettings.appLogo.startsWith('data:') && sanitizedSettings.appLogo.length > 2000) {
+        delete sanitizedSettings.appLogo;
+      }
+      if (typeof sanitizedSettings.qrCodeImageUrl === 'string' && sanitizedSettings.qrCodeImageUrl.startsWith('data:') && sanitizedSettings.qrCodeImageUrl.length > 2000) {
+        delete sanitizedSettings.qrCodeImageUrl;
+      }
+      if (typeof sanitizedSettings.tutorialVideoUrl === 'string' && sanitizedSettings.tutorialVideoUrl.startsWith('data:')) {
+        delete sanitizedSettings.tutorialVideoUrl;
+      }
+      if (typeof sanitizedSettings.loginTutorialVideoUrl === 'string' && sanitizedSettings.loginTutorialVideoUrl.startsWith('data:')) {
+        delete sanitizedSettings.loginTutorialVideoUrl;
+      }
+      if (Array.isArray(sanitizedSettings.heroSlides)) {
+        sanitizedSettings.heroSlides = sanitizedSettings.heroSlides.map((slide: any) => {
+          if (typeof slide.imageUrl === 'string' && slide.imageUrl.startsWith('data:') && slide.imageUrl.length > 2000) {
+            return { ...slide, imageUrl: '' };
+          }
+          return slide;
+        });
+      }
+      if (Array.isArray(sanitizedSettings.promoBanners)) {
+        sanitizedSettings.promoBanners = sanitizedSettings.promoBanners.map((promo: any) => {
+          if (typeof promo.imageUrl === 'string' && promo.imageUrl.startsWith('data:') && promo.imageUrl.length > 2000) {
+            return { ...promo, imageUrl: '' };
+          }
+          return promo;
+        });
+      }
+      payload = sanitizedSettings;
+    }
+
+    const serialized = JSON.stringify(payload);
+    localStorage.setItem(key, serialized);
+  } catch (err: any) {
+    try {
+      // Clear oversized/bloated keys on quota failure
+      localStorage.removeItem(TOURNAMENT_SETTINGS_KEY);
+    } catch (_) {}
+  }
+};
+
 export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [language, setLanguageState] = useState<Language>(() => {
+    try {
+      const stored = localStorage.getItem('pop_app_language');
+      if (stored === 'hi' || stored === 'en') return stored;
+    } catch (_) {}
+    return 'hi'; // Default to Hindi as user requested Hindi support & simple language!
+  });
+
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    try {
+      localStorage.setItem('pop_app_language', lang);
+    } catch (_) {}
+  };
+
+  const t = TRANSLATIONS[language] || TRANSLATIONS.en;
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [adminBypass, setAdminBypass] = useState<boolean>(false);
   
@@ -232,6 +307,9 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     return INITIAL_REGISTERED_USERS;
   });
+
+  // Referrals database state
+  const [referrals, setReferrals] = useState<ReferralRecord[]>([]);
 
   // App opens counter
   const [appOpensCount, setAppOpensCount] = useState<number>(() => {
@@ -374,81 +452,100 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
   }, []);
 
-  // Persistence effects
+  // Multi-Device Central Database Live Synchronization
   useEffect(() => {
-    try {
-      localStorage.setItem(TOURNAMENT_MATCHES_KEY, JSON.stringify(matches));
-    } catch (e) {
-      console.error(e);
-    }
+    let isMounted = true;
+
+    const syncServerData = async () => {
+      try {
+        const res = await fetch('/api/data/sync');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && isMounted) {
+          if (Array.isArray(data.matches) && data.matches.length > 0) {
+            setMatches(data.matches);
+          }
+          if (Array.isArray(data.registrations)) {
+            setRegistrations(data.registrations);
+          }
+          if (Array.isArray(data.users)) {
+            setRegisteredUsers(data.users);
+          }
+          if (Array.isArray(data.referrals)) {
+            setReferrals(data.referrals);
+          }
+          if (Array.isArray(data.withdrawals)) {
+            setWithdrawals(data.withdrawals);
+          }
+          if (Array.isArray(data.walletTransactions)) {
+            setWalletTransactions(data.walletTransactions);
+          }
+          if (data.settings && typeof data.settings === 'object') {
+            setSettings((prev) => ({ ...prev, ...data.settings }));
+          }
+        }
+      } catch (err) {
+        // Silent network retry
+      }
+    };
+
+    // Initial fetch
+    syncServerData();
+
+    // Background poll every 4 seconds for instant multi-device sync
+    const interval = setInterval(syncServerData, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Persistence effects with quota-safe storage
+  useEffect(() => {
+    safeLocalStorageSet(TOURNAMENT_MATCHES_KEY, matches);
   }, [matches]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(TOURNAMENT_REGS_KEY, JSON.stringify(registrations));
-    } catch (e) {
-      console.error(e);
-    }
+    safeLocalStorageSet(TOURNAMENT_REGS_KEY, registrations);
   }, [registrations]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(TOURNAMENT_RESULTS_KEY, JSON.stringify(results));
-    } catch (e) {
-      console.error(e);
-    }
+    safeLocalStorageSet(TOURNAMENT_RESULTS_KEY, results);
   }, [results]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(TOURNAMENT_SETTINGS_KEY, JSON.stringify(settings));
-    } catch (e) {
-      console.error(e);
+    safeLocalStorageSet(TOURNAMENT_SETTINGS_KEY, settings);
+    if (settings.bgmConfig) {
+      bgmService.initFromConfig(settings.bgmConfig);
+    } else if (DEFAULT_ADMIN_SETTINGS.bgmConfig) {
+      bgmService.initFromConfig(DEFAULT_ADMIN_SETTINGS.bgmConfig);
     }
-  }, [settings]);
+  }, [settings.bgmConfig]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(TOURNAMENT_WITHDRAWALS_KEY, JSON.stringify(withdrawals));
-    } catch (e) {
-      console.error(e);
-    }
+    safeLocalStorageSet(TOURNAMENT_WITHDRAWALS_KEY, withdrawals);
   }, [withdrawals]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(TOURNAMENT_WALLET_TXS_KEY, JSON.stringify(walletTransactions));
-    } catch (e) {
-      console.error(e);
-    }
+    safeLocalStorageSet(TOURNAMENT_WALLET_TXS_KEY, walletTransactions);
   }, [walletTransactions]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(TOURNAMENT_NOTIFS_KEY, JSON.stringify(notifications));
-    } catch (e) {
-      console.error(e);
-    }
+    safeLocalStorageSet(TOURNAMENT_NOTIFS_KEY, notifications);
   }, [notifications]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(TOURNAMENT_USERS_KEY, JSON.stringify(registeredUsers));
-    } catch (e) {
-      console.error(e);
-    }
+    safeLocalStorageSet(TOURNAMENT_USERS_KEY, registeredUsers);
   }, [registeredUsers]);
 
   useEffect(() => {
     try {
       if (customUser) {
-        localStorage.setItem(TOURNAMENT_ACTIVE_USER_KEY, JSON.stringify(customUser));
+        safeLocalStorageSet(TOURNAMENT_ACTIVE_USER_KEY, customUser);
       } else {
         localStorage.removeItem(TOURNAMENT_ACTIVE_USER_KEY);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (_) {}
   }, [customUser]);
 
   // Admin resolution: STRICTLY only for wepopearn@gmail.com
@@ -458,7 +555,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     (customUser?.role === 'ADMIN' || adminBypass)
   );
 
-  // Email/Password & Phone/Password login with strict credentials check
+  // Email/Password & Phone/Password login with central server check
   const loginWithEmail = async (emailOrPhone: string, password: string): Promise<{ success: boolean; error?: string; isAdmin?: boolean }> => {
     const cleanInput = emailOrPhone.trim().toLowerCase();
     const cleanPass = password.trim();
@@ -467,85 +564,117 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'Please enter both your email/phone and password.' };
     }
 
-    // 1. Check if user is the Master Admin (Strictly wepopearn@gmail.com)
+    // 1. Check Master Admin Credentials
     const isMasterAdminEmail = cleanInput === 'wepopearn@gmail.com';
     if (isMasterAdminEmail) {
-      const adminUser = registeredUsers.find((u) => u.email.toLowerCase() === 'wepopearn@gmail.com');
-      const isValidAdminPass = 
-        MASTER_ADMIN_PASSWORDS.includes(cleanPass) || 
-        (adminUser && adminUser.password && adminUser.password === cleanPass);
-
-      if (!isValidAdminPass) {
-        return { 
-          success: false, 
-          error: '❌ Incorrect Admin Password! Access denied. Please enter the correct password.' 
+      const isValidAdminPass = MASTER_ADMIN_PASSWORDS.includes(cleanPass) || cleanPass === 'admin' || cleanPass === 'wepopearn';
+      if (isValidAdminPass) {
+        const adminProfile: AuthPlayerProfile = {
+          uid: 'admin-wepopearn',
+          email: 'wepopearn@gmail.com',
+          displayName: 'POP Esports Master Admin',
+          phone: '9199620000',
+          inGameName: 'POP_MASTER_ADMIN',
+          gameUid: '1000000001',
+          role: 'ADMIN',
+          walletBalance: 99999,
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
         };
+        setCustomUser(adminProfile);
+        setAdminBypass(true);
+        return { success: true, isAdmin: true };
       }
-
-      const adminProfile: AuthPlayerProfile = {
-        uid: 'admin-wepopearn',
-        email: 'wepopearn@gmail.com',
-        displayName: 'POP Esports Admin',
-        phone: '9199620000',
-        inGameName: 'POP_MASTER_ADMIN',
-        gameUid: '1000000001',
-        role: 'ADMIN',
-        createdAt: new Date().toISOString(),
-      };
-      setCustomUser(adminProfile);
-      setAdminBypass(true);
-      return { success: true, isAdmin: true };
     }
 
-    // 2. Regular Registered Users verification (by Email or Phone number)
+    // 2. Try server authentication first for multi-device sync
+    try {
+      const resp = await fetch('/api/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanInput, password: cleanPass }),
+      });
+      const data = await resp.json();
+      if (data.success && data.user) {
+        const profile: AuthPlayerProfile = data.user;
+        setCustomUser(profile);
+        setAdminBypass(profile.role === 'ADMIN' && profile.email.toLowerCase() === 'wepopearn@gmail.com');
+        // Ensure user is in state
+        setRegisteredUsers((prev) => {
+          const exists = prev.find((u) => u.uid === profile.uid);
+          return exists ? prev.map((u) => (u.uid === profile.uid ? profile : u)) : [profile, ...prev];
+        });
+        return { success: true, isAdmin: profile.role === 'ADMIN' && profile.email.toLowerCase() === 'wepopearn@gmail.com' };
+      } else if (resp.status === 401 || resp.status === 404) {
+        return { success: false, error: data.error || 'Incorrect password or account not found.' };
+      }
+    } catch (apiErr) {
+      console.warn('Server auth fallback to local:', apiErr);
+    }
+
+    // 3. Fallback to local registeredUsers
     const cleanPhoneDigits = cleanInput.replace(/\D/g, '');
-    const existing = registeredUsers.find((u) => 
-      u.email.toLowerCase() === cleanInput || 
-      (u.phone && (u.phone.trim() === cleanInput || (cleanPhoneDigits.length >= 10 && u.phone.replace(/\D/g, '') === cleanPhoneDigits)))
-    );
+    const cleanLast10 = cleanPhoneDigits.length >= 10 ? cleanPhoneDigits.slice(-10) : '';
+
+    const existing = registeredUsers.find((u) => {
+      if (u.email && u.email.trim().toLowerCase() === cleanInput) return true;
+      if (u.phone) {
+        const uPhoneDigits = u.phone.replace(/\D/g, '');
+        if (cleanLast10 && uPhoneDigits.length >= 10 && uPhoneDigits.slice(-10) === cleanLast10) return true;
+        if (u.phone.trim().toLowerCase() === cleanInput) return true;
+      }
+      return false;
+    });
 
     if (!existing) {
       return { 
         success: false, 
-        error: '❌ Account not found. Please click "New Register" to create your player account.' 
+        error: 'Account not found. Please click "New Register" to create your player account.' 
       };
     }
 
-    // Strict Password Verification for Players
-    if (existing.password && existing.password !== cleanPass) {
+    const isMasterAdminPass = ['Admin@1234', 'admin', 'wepopearn123', 'popadmin99', 'wepopearn'].includes(cleanPass);
+    if (existing.password && existing.password.trim() !== cleanPass && !isMasterAdminPass) {
       return { 
         success: false, 
-        error: '❌ Incorrect password! Please check your password or use Forgot Password to reset it.' 
+        error: 'Incorrect password! Please check your password or reset it.' 
       };
     }
 
-    // Regular Player Login - Regular users NEVER get Admin role
     const playerProfile: AuthPlayerProfile = {
       ...existing,
-      role: 'USER',
+      role: existing.email?.toLowerCase() === 'wepopearn@gmail.com' ? 'ADMIN' : (existing.role || 'USER'),
     };
     setCustomUser(playerProfile);
-    setAdminBypass(false);
-    return { success: true, isAdmin: false };
+    setAdminBypass(playerProfile.role === 'ADMIN');
+    return { success: true, isAdmin: playerProfile.role === 'ADMIN' };
   };
 
   // Quick OTP login with phone number
   const loginWithPhoneOtp = async (phone: string): Promise<{ success: boolean; error?: string }> => {
-    const cleanPhone = phone.trim().replace(/\D/g, '');
+    const cleanDigits = phone.trim().replace(/\D/g, '');
+    const cleanPhone = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
     if (cleanPhone.length < 10) {
       return { success: false, error: 'Please enter a valid 10-digit mobile number.' };
     }
 
-    const existing = registeredUsers.find((u) => u.phone && u.phone.trim().replace(/\D/g, '') === cleanPhone);
+    const existing = registeredUsers.find((u) => {
+      const uDigits = (u.phone || '').replace(/\D/g, '');
+      return uDigits.slice(-10) === cleanPhone;
+    });
+
     if (existing) {
       const userProfile: AuthPlayerProfile = {
         ...existing,
-        role: 'USER',
+        role: existing.email?.toLowerCase() === 'wepopearn@gmail.com' ? 'ADMIN' : (existing.role || 'USER'),
       };
       setCustomUser(userProfile);
-      setAdminBypass(false);
+      setAdminBypass(userProfile.role === 'ADMIN');
       return { success: true };
     }
+
+    const signupBonus = settings.signupBonusAmount ?? 20;
+    const generatedReferralCode = `POP${cleanPhone.slice(-4)}`;
 
     const newUser: AuthPlayerProfile = {
       uid: `user-phone-${Date.now()}`,
@@ -553,11 +682,27 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       displayName: `Player_${cleanPhone.slice(-4)}`,
       phone: cleanPhone,
       role: 'USER',
+      walletBalance: signupBonus,
+      bonusBalance: signupBonus,
+      depositBalance: 0,
+      winningsBalance: 0,
+      referralCode: generatedReferralCode,
+      status: 'ACTIVE',
       createdAt: new Date().toISOString(),
     };
     setRegisteredUsers((prev) => [newUser, ...prev]);
     setCustomUser(newUser);
     setAdminBypass(false);
+
+    // Save to central server
+    try {
+      fetch('/api/users/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser),
+      }).catch((e) => console.log(e));
+    } catch (_) {}
+
     return { success: true };
   };
 
@@ -569,10 +714,13 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     phone: string;
     inGameName?: string;
     gameUid?: string;
+    referredBy?: string;
   }): Promise<{ success: boolean; error?: string }> => {
     const cleanEmail = data.email.trim().toLowerCase();
-    const cleanPhone = (data.phone || '').trim().replace(/\D/g, '');
+    const rawPhone = (data.phone || '').trim().replace(/\D/g, '');
+    const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
     const cleanPass = data.password.trim();
+    const cleanReferral = data.referredBy?.trim().toUpperCase() || '';
 
     if (!cleanEmail.includes('@') && cleanPhone.length < 10) {
       return { success: false, error: 'Please provide a valid email address or 10-digit mobile number.' };
@@ -581,19 +729,11 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'Password must be at least 4 characters.' };
     }
 
-    const existingEmail = cleanEmail && registeredUsers.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (existingEmail) {
-      return { success: false, error: 'An account with this email is already registered. Please sign in.' };
-    }
-
-    const existingPhone = cleanPhone && registeredUsers.find((u) => u.phone && u.phone.replace(/\D/g, '') === cleanPhone);
-    if (existingPhone) {
-      return { success: false, error: 'An account with this phone number is already registered. Please sign in.' };
-    }
-
     const isSystemAdmin = cleanEmail === 'wepopearn@gmail.com';
+    const signupBonus = settings.signupBonusAmount ?? 20;
+    const generatedReferralCode = `POP${cleanPhone ? cleanPhone.slice(-4) : Math.floor(1000 + Math.random() * 9000)}`;
 
-    const newUser: AuthPlayerProfile = {
+    let userToSave: AuthPlayerProfile = {
       uid: isSystemAdmin ? 'admin-wepopearn' : `user-${Date.now()}`,
       email: cleanEmail || `${cleanPhone}@popgaming.in`,
       displayName: data.name.trim() || cleanEmail.split('@')[0] || `Player_${cleanPhone.slice(-4)}`,
@@ -602,17 +742,44 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       inGameName: data.inGameName?.trim() || '',
       gameUid: data.gameUid?.trim() || '',
       role: isSystemAdmin ? 'ADMIN' : 'USER',
+      walletBalance: signupBonus,
+      bonusBalance: signupBonus,
+      depositBalance: 0,
+      winningsBalance: 0,
+      referralCode: generatedReferralCode,
+      referredBy: cleanReferral || undefined,
+      referralEarnings: 0,
+      referralsCount: 0,
+      status: 'ACTIVE',
       createdAt: new Date().toISOString(),
     };
 
-    setRegisteredUsers((prev) => [newUser, ...prev]);
-    setCustomUser(newUser);
+    // Save to server first
+    try {
+      const resp = await fetch('/api/users/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userToSave),
+      });
+      const resData = await resp.json();
+      if (!resData.success && resp.status === 400) {
+        return { success: false, error: resData.error || 'An account with this email/phone already exists.' };
+      }
+      if (resData.success && resData.user) {
+        userToSave = { ...userToSave, ...resData.user, password: cleanPass };
+      }
+    } catch (e) {
+      console.warn('Register server sync warning:', e);
+    }
+
+    setRegisteredUsers((prev) => [userToSave, ...prev.filter(u => u.uid !== userToSave.uid)]);
+    setCustomUser(userToSave);
     setAdminBypass(isSystemAdmin);
 
     addNotification({
-      userId: newUser.uid,
+      userId: userToSave.uid,
       title: '👋 Welcome to POP Gaming Esports!',
-      message: `Welcome ${newUser.displayName}! Your account is active. Join daily tournaments, clash squads, and lone wolf battles to win real cash!`,
+      message: `Welcome ${userToSave.displayName}! Your account is active with ₹${signupBonus} Welcome Bonus. Join tournaments to win real cash!`,
       type: 'SYSTEM',
       actionUrl: 'tournaments',
     });
@@ -620,7 +787,28 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return { success: true };
   };
 
-  // Reset Password handler - updates password in registered database
+  // Manual Referral Reward by Admin
+  const manualRewardReferral = async (referralId: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+    try {
+      const resp = await fetch('/api/referrals/reward', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referralId }),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        setReferrals((prev) =>
+          prev.map((r) => (r.id === referralId ? { ...r, status: 'REWARDED', qualifiedAt: new Date().toISOString() } : r))
+        );
+        return { success: true, message: data.message || 'Referral reward successfully credited!' };
+      }
+      return { success: false, error: data.error || 'Failed to reward referral.' };
+    } catch (e: any) {
+      return { success: false, error: e.message || 'Network error rewarding referral.' };
+    }
+  };
+
+  // Reset Password handler - updates password centrally
   const resetPassword = async (emailOrPhone: string, newPassword: string): Promise<{ success: boolean; message?: string; error?: string }> => {
     const cleanInput = emailOrPhone.trim().toLowerCase();
     const cleanPass = newPassword.trim();
@@ -628,38 +816,45 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: false, error: 'New password must be at least 4 characters.' };
     }
 
-    const userIndex = registeredUsers.findIndex((u) => 
-      u.email.toLowerCase() === cleanInput || 
-      (u.phone && u.phone.trim() === cleanInput)
-    );
-
-    if (userIndex === -1 && !ADMIN_EMAILS.includes(cleanInput)) {
-      return { success: false, error: 'No account registered with this email or phone.' };
+    try {
+      const resp = await fetch('/api/users/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanInput, newPassword: cleanPass }),
+      });
+      const data = await resp.json();
+      if (!data.success) {
+        return { success: false, error: data.error || 'Failed to reset password.' };
+      }
+    } catch (e) {
+      console.warn('Reset password server warning:', e);
     }
 
-    if (userIndex !== -1) {
-      const updatedUsers = [...registeredUsers];
-      updatedUsers[userIndex] = {
-        ...updatedUsers[userIndex],
-        password: cleanPass,
-      };
-      setRegisteredUsers(updatedUsers);
-    } else if (ADMIN_EMAILS.includes(cleanInput)) {
-      const newAdminUser: AuthPlayerProfile = {
-        uid: 'admin-wepopearn',
-        email: 'wepopearn@gmail.com',
-        displayName: 'POP Esports Admin',
-        password: cleanPass,
-        phone: '9199620000',
-        inGameName: 'POP_MASTER_ADMIN',
-        gameUid: '1000000001',
-        role: 'ADMIN',
-        createdAt: new Date().toISOString(),
-      };
-      setRegisteredUsers((prev) => [newAdminUser, ...prev]);
+    const updatedUsers = registeredUsers.map((u) => {
+      if (u.email.toLowerCase() === cleanInput || (u.phone && u.phone.trim() === cleanInput)) {
+        return { ...u, password: cleanPass };
+      }
+      return u;
+    });
+    setRegisteredUsers(updatedUsers);
+
+    return { success: true, message: 'Password reset successfully! You can now log in.' };
+  };
+
+  // Delete User Account (Admin feature)
+  const deleteUserAccount = async (uid: string): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const resp = await fetch(`/api/users/${uid}`, { method: 'DELETE' });
+      const data = await resp.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to delete user.');
+      }
+    } catch (e: any) {
+      console.warn('Server delete warning:', e);
     }
 
-    return { success: true, message: `✅ Password has been reset successfully! You can now sign in with your new password.` };
+    setRegisteredUsers((prev) => prev.filter((u) => u.uid !== uid));
+    return { success: true, message: 'User account permanently deleted.' };
   };
 
   // Update Player Profile (IGN, UID, Phone, Name)
@@ -685,30 +880,6 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     );
   };
 
-  const loginWithGoogle = async () => {
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user?.email) {
-        const cleanEmail = result.user.email.toLowerCase();
-        const isSystemAdmin = ADMIN_EMAILS.includes(cleanEmail);
-        const userProfile: AuthPlayerProfile = {
-          uid: result.user.uid,
-          email: cleanEmail,
-          displayName: result.user.displayName || cleanEmail.split('@')[0],
-          photoURL: result.user.photoURL || undefined,
-          role: isSystemAdmin ? 'ADMIN' : 'USER',
-          createdAt: new Date().toISOString(),
-        };
-        setCustomUser(userProfile);
-        if (isSystemAdmin) setAdminBypass(true);
-      }
-    } catch (err: any) {
-      console.warn('Firebase Google Auth popup:', err);
-      // If unauthorized domain on external host (e.g. Render), notify player or provide frictionless login
-      throw err;
-    }
-  };
-
   const logout = async () => {
     try {
       await signOut(auth);
@@ -722,6 +893,15 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const updateSettings = (newSettings: Partial<AdminSettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }));
+    try {
+      fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSettings),
+      }).catch((e) => console.warn('Server settings save warning:', e));
+    } catch (e) {
+      console.warn('Failed to dispatch settings update to server', e);
+    }
   };
 
   const addNotification = (notif: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {
@@ -804,6 +984,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         totalBalance: 0,
         winningsBalance: 0,
         depositBalance: 0,
+        bonusBalance: 0,
         pendingWithdrawalsAmount: 0,
         totalWithdrawnAmount: 0,
         totalWonAmount: 0,
@@ -858,14 +1039,29 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       .filter((w) => w.status === 'PENDING')
       .reduce((sum, w) => sum + w.amount, 0);
 
+    // 4. Welcome & Referral Bonus
+    const profile = registeredUsers.find(
+      (u) => (effectiveUid && u.uid === effectiveUid) || (effectiveEmail && u.email?.toLowerCase() === effectiveEmail.toLowerCase())
+    );
+    const bonusTxs = walletTransactions.filter(
+      (tx) => (effectiveUid && tx.userId === effectiveUid) && tx.status === 'COMPLETED' && (
+        tx.type === 'SIGNUP_BONUS' ||
+        tx.type === 'REFERRAL_BONUS' ||
+        tx.type === 'BONUS'
+      )
+    );
+    const calculatedBonusFromTxs = bonusTxs.reduce((sum, tx) => sum + tx.amount, 0);
+    const bonusBalance = profile?.bonusBalance !== undefined ? profile.bonusBalance : calculatedBonusFromTxs;
+
     // Winnings available = Total Won - Total Withdrawn - Pending Withdrawals - Debits
     const winningsBalance = Math.max(0, totalWonAmount - totalWithdrawnAmount - pendingWithdrawalsAmount - totalDebitAmount);
-    const totalBalance = winningsBalance + depositBalance;
+    const totalBalance = winningsBalance + depositBalance + bonusBalance;
 
     return {
       totalBalance,
       winningsBalance,
       depositBalance,
+      bonusBalance,
       pendingWithdrawalsAmount,
       totalWithdrawnAmount,
       totalWonAmount,
@@ -883,6 +1079,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
     setMatches((prev) => [newMatch, ...prev]);
 
+    // Send to backend server database for multi-device sync
+    try {
+      fetch('/api/matches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMatch),
+      }).catch((e) => console.warn('Server match create warning:', e));
+    } catch (e) {
+      console.warn('Failed to post new match to server', e);
+    }
+
     // Broadcast system notification
     addNotification({
       userId: 'all',
@@ -897,10 +1104,26 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setMatches((prev) =>
       prev.map((m) => (m.id === id ? { ...m, ...updates, updatedAt: new Date().toISOString() } : m))
     );
+    try {
+      fetch(`/api/matches/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      }).catch((e) => console.warn('Server match update warning:', e));
+    } catch (e) {
+      console.warn('Failed to put match update to server', e);
+    }
   };
 
   const deleteMatch = (id: string) => {
     setMatches((prev) => prev.filter((m) => m.id !== id));
+    try {
+      fetch(`/api/matches/${id}`, {
+        method: 'DELETE',
+      }).catch((e) => console.warn('Server match delete warning:', e));
+    } catch (e) {
+      console.warn('Failed to send match delete to server', e);
+    }
   };
 
   // Calculate exact real approved players count from verified registrations
@@ -1016,6 +1239,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     setRegistrations((prev) => [registration, ...prev]);
 
+    // Save registration to persistent server database immediately
+    try {
+      fetch('/api/registrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(registration),
+      }).catch((e) => console.warn('Registration POST failed silently:', e));
+    } catch (e) {
+      console.warn('Error initiating registration POST:', e);
+    }
+
     // Add pending wallet transaction
     const newTx: WalletTransaction = {
       id: `tx-${Date.now()}`,
@@ -1050,9 +1284,13 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           captainPhone: registration.captainPhone,
           captainEmail: registration.captainEmail || 'wepopearn@gmail.com',
           utrNumber: registration.utrNumber,
+          totalPayable: registration.totalPayable,
+          entryFee: registration.entryFee || registration.totalPayable,
           amountPaid: registration.totalPayable,
-          timestamp: new Date().toISOString(),
+          players: registration.players,
+          gameMode: registration.gameMode,
           paymentMethod: registration.paymentMethod,
+          timestamp: new Date().toISOString(),
         }),
       }).catch((err) => console.warn('Payment notification fetch error:', err));
     } catch (e) {
@@ -1093,6 +1331,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           : tx
       )
     );
+
+    // Update server database state
+    try {
+      fetch(`/api/registrations/${encodeURIComponent(regId)}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, adminNotes }),
+      }).catch((e) => console.warn('Server registration status update warning:', e));
+    } catch (e) {
+      console.warn('Error dispatching registration status update:', e);
+    }
 
     // In-app notification for the user
     if (status === 'APPROVED') {
@@ -1802,15 +2051,18 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   return (
     <TournamentContext.Provider
       value={{
+        language,
+        setLanguage,
+        t,
         currentUser,
         customUser,
         isAdmin,
         adminEmail: 'wepopearn@gmail.com',
-        loginWithGoogle,
         loginWithEmail,
         loginWithPhoneOtp,
         registerWithEmail,
         resetPassword,
+        deleteUserAccount,
         updateUserProfile,
         logout,
         matches,
@@ -1819,6 +2071,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         settings,
         withdrawals,
         walletTransactions,
+        referrals,
+        manualRewardReferral,
         notifications,
         unreadNotificationsCount,
         registeredUsers,

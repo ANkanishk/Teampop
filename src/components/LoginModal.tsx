@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   LogIn, 
@@ -16,9 +16,12 @@ import {
   RefreshCw,
   Smartphone,
   Eye,
-  EyeOff
+  EyeOff,
+  Gift,
+  Sparkles
 } from 'lucide-react';
 import { useTournaments } from '../context/TournamentContext';
+import { HowToPlayVideoGuide } from './HowToPlayVideoGuide';
 
 interface LoginModalProps {
   onClose: () => void;
@@ -31,7 +34,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onAdminAuthenticated,
   initialMode = 'LOGIN',
 }) => {
-  const { loginWithEmail, loginWithPhoneOtp, registerWithEmail, resetPassword } = useTournaments();
+  const { loginWithEmail, loginWithPhoneOtp, registerWithEmail, resetPassword, language, t } = useTournaments();
 
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'FORGOT' | 'PHONE_OTP'>(initialMode);
   const [loginMethod, setLoginMethod] = useState<'EMAIL' | 'PHONE'>('EMAIL');
@@ -39,6 +42,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [showRegPassword, setShowRegPassword] = useState(false);
 
   // Login form state
   const [loginIdentifier, setLoginIdentifier] = useState('');
@@ -51,6 +55,40 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [regPassword, setRegPassword] = useState('');
   const [regInGameName, setRegInGameName] = useState('');
   const [regGameUid, setRegGameUid] = useState('');
+  const [regReferralCode, setRegReferralCode] = useState(() => {
+    try {
+      return localStorage.getItem('pop_referral_code') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [referralValidation, setReferralValidation] = useState<{ valid?: boolean; referrerName?: string; loading?: boolean } | null>(null);
+
+  // Check referral code validity on change
+  useEffect(() => {
+    const clean = regReferralCode.trim();
+    if (!clean) {
+      setReferralValidation(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setReferralValidation({ loading: true });
+      try {
+        const res = await fetch(`/api/referrals/check-code?code=${encodeURIComponent(clean)}`);
+        const data = await res.json();
+        if (data.valid) {
+          setReferralValidation({ valid: true, referrerName: data.referrerName });
+        } else {
+          setReferralValidation({ valid: false });
+        }
+      } catch {
+        setReferralValidation(null);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [regReferralCode]);
 
   // Forgot password & OTP state
   const [forgotTarget, setForgotTarget] = useState('');
@@ -117,10 +155,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         phone: regPhone.trim(),
         inGameName: regInGameName.trim(),
         gameUid: regGameUid.trim(),
+        referredBy: regReferralCode.trim() || undefined,
       });
 
       if (res.success) {
-        setSuccessMsg('🎉 Account registered successfully! Welcome to POP Gaming.');
+        setSuccessMsg('🎉 Account registered successfully! Your password is saved permanently. Welcome to POP Gaming.');
         setTimeout(() => {
           onClose();
         }, 1200);
@@ -376,7 +415,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     : 'text-neutral-400 hover:text-white'
                 }`}
               >
-                Sign In
+                {t.signIn}
               </button>
               <button
                 type="button"
@@ -391,10 +430,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     : 'text-neutral-400 hover:text-white'
                 }`}
               >
-                New Register
+                {t.register}
               </button>
             </div>
           )}
+
+          {/* Quick Video Tutorial Guide */}
+          <HowToPlayVideoGuide variant="compact" videoType="login" />
 
           {/* Status Alerts */}
           {error && (
@@ -426,6 +468,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     placeholder="name@gmail.com or 10-digit mobile"
                     value={loginIdentifier}
                     onChange={(e) => setLoginIdentifier(e.target.value)}
+                    onBlur={(e) => {
+                      let val = e.target.value.trim();
+                      if (val.includes('@')) {
+                        val = val.toLowerCase().replace(/@gmail\.co$/i, '@gmail.com').replace(/@gmail\.con$/i, '@gmail.com');
+                        setLoginIdentifier(val);
+                      }
+                    }}
                     className="w-full pl-9 pr-3.5 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
                   />
                 </div>
@@ -564,6 +613,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     placeholder="player@gmail.com"
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
+                    onBlur={(e) => {
+                      let val = e.target.value.trim().toLowerCase();
+                      val = val.replace(/@gmail\.co$/i, '@gmail.com').replace(/@gmail\.con$/i, '@gmail.com').replace(/@gmail\.comm$/i, '@gmail.com').replace(/@gmail\.cmo$/i, '@gmail.com');
+                      setRegEmail(val);
+                    }}
                     className="w-full pl-8 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
                   />
                 </div>
@@ -574,14 +628,67 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500" />
                   <input
-                    type="password"
+                    type={showRegPassword ? 'text' : 'password'}
                     required
                     placeholder="Minimum 4 characters"
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
+                    className="w-full pl-8 pr-10 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-orange-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPassword(!showRegPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300 cursor-pointer"
+                  >
+                    {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span>Your password is saved securely and stays safe permanently.</span>
+                </p>
+              </div>
+
+              {/* Referral / Reference Code (Optional) */}
+              <div className="p-2.5 rounded-xl bg-gradient-to-r from-orange-950/30 to-amber-950/20 border border-orange-500/20 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold text-orange-300 flex items-center gap-1.5">
+                    <Gift className="w-3.5 h-3.5 text-orange-400" />
+                    <span>Referral / Reference Code (Optional)</span>
+                  </label>
+                  <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                    +₹20 Signup Bonus
+                  </span>
+                </div>
+
+                <div className="relative">
+                  <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-orange-400" />
+                  <input
+                    type="text"
+                    placeholder="Enter friend's referral code (e.g. POP1234)"
+                    value={regReferralCode}
+                    onChange={(e) => setRegReferralCode(e.target.value.toUpperCase())}
+                    className="w-full pl-8 pr-3 py-2 bg-neutral-950 border border-orange-500/30 rounded-xl text-xs text-orange-200 placeholder-neutral-600 focus:outline-none focus:border-orange-400 uppercase font-mono font-bold"
                   />
                 </div>
+
+                {referralValidation && (
+                  <div className="text-[11px]">
+                    {referralValidation.loading ? (
+                      <span className="text-neutral-400 flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Verifying reference code...
+                      </span>
+                    ) : referralValidation.valid ? (
+                      <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Code Applied! Invited by {referralValidation.referrerName}
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 text-[10px]">
+                        ℹ️ Code not recognized, but you still get ₹20 Welcome Bonus!
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <button
@@ -590,7 +697,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg transition disabled:opacity-50 mt-1"
               >
                 {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                <span>Create Account</span>
+                <span>Create Account & Get ₹20 Bonus</span>
               </button>
             </form>
           )}

@@ -126,3 +126,65 @@ export async function sendTestEmailNotification(email: string, name: string): Pr
     };
   }
 }
+
+export interface DispatchRoomCredentialsOptions {
+  matchId: string;
+  roomId?: string;
+  roomPassword?: string;
+  customNotes?: string;
+  forceAll?: boolean;
+  testRecipientEmail?: string;
+}
+
+export interface DispatchRoomCredentialsResult {
+  success: boolean;
+  message: string;
+  sentCount?: number;
+  recipients?: string[];
+  failed?: string[];
+  simulated?: boolean;
+  error?: string;
+}
+
+/**
+ * Sends Free Fire Custom Room ID & Password to all approved participants via Gmail
+ */
+export async function dispatchRoomCredentialsNotification(
+  options: DispatchRoomCredentialsOptions
+): Promise<DispatchRoomCredentialsResult> {
+  try {
+    const res = await fetch(`/api/matches/${options.matchId}/dispatch-credentials`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roomId: options.roomId,
+        roomPassword: options.roomPassword,
+        customNotes: options.customNotes,
+        forceAll: options.forceAll,
+        testRecipientEmail: options.testRecipientEmail,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to dispatch room credentials');
+    }
+
+    return {
+      success: true,
+      message: data.message,
+      sentCount: data.sentCount,
+      recipients: data.recipients,
+      failed: data.failed,
+      simulated: data.simulated,
+    };
+  } catch (err: any) {
+    console.error('[Dispatch Room Credentials Error]', err);
+    return {
+      success: false,
+      message: err.message || 'Failed to send room credentials via Gmail',
+      error: err.message,
+    };
+  }
+}
+

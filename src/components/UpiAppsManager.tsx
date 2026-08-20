@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useTournaments } from '../context/TournamentContext';
 import { UpiAppConfig } from '../types';
+import { uploadImageToServer } from '../lib/uploadHelper';
 import { 
   INITIAL_UPI_APPS, 
   buildUpiDeepLink,
@@ -56,7 +57,7 @@ export const UpiAppsManager: React.FC = () => {
     );
   };
 
-  const handleImageUpload = (appId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (appId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     setCustomImageError(null);
     if (file) {
@@ -64,11 +65,12 @@ export const UpiAppsManager: React.FC = () => {
         setCustomImageError('Image size should be less than 5MB.');
         return;
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        handleUpdateApp(appId, { logoUrl: reader.result as string });
-      };
-      reader.readAsDataURL(file);
+      try {
+        const url = await uploadImageToServer(file, 'upi-logos');
+        handleUpdateApp(appId, { logoUrl: url });
+      } catch (err) {
+        console.error('Error uploading UPI logo', err);
+      }
     }
   };
 

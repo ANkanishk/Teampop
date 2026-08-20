@@ -7,27 +7,29 @@ import {
   Smartphone, 
   LogOut, 
   Zap, 
-  CheckCircle2,
-  Lock,
-  Wallet,
-  Bell,
-  Settings,
-  Key,
-  ExternalLink,
-  Flame,
-  CreditCard,
-  Sparkles,
-  LogIn,
-  ArrowRight,
-  Gamepad2,
-  Mail,
-  Copy,
-  Edit3,
-  Save,
-  Check
+  CheckCircle2, 
+  Lock, 
+  Wallet, 
+  Bell, 
+  Settings, 
+  Key, 
+  ExternalLink, 
+  Flame, 
+  CreditCard, 
+  Sparkles, 
+  LogIn, 
+  ArrowRight, 
+  Gamepad2, 
+  Mail, 
+  Copy, 
+  Edit3, 
+  Save, 
+  Check,
+  Gift
 } from 'lucide-react';
 import { useTournaments } from '../context/TournamentContext';
 import { WalletSection } from './WalletSection';
+import { ReferralSection } from './ReferralSection';
 import { EsportsPlayerIdCard } from './EsportsPlayerIdCard';
 import { AppNotification } from '../types';
 import { soundFx } from '../lib/soundEffects';
@@ -53,7 +55,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onOpenLoginModal }) =>
     updateUserProfile,
   } = useTournaments();
 
-  const [activeSubTab, setActiveSubTab] = useState<'WALLET' | 'PASSPORT' | 'MATCHES' | 'NOTIFICATIONS' | 'ACCOUNT'>('ACCOUNT');
+  const [activeSubTab, setActiveSubTab] = useState<'WALLET' | 'REFERRAL' | 'PASSPORT' | 'MATCHES' | 'NOTIFICATIONS' | 'ACCOUNT'>('ACCOUNT');
   const [isEditing, setIsEditing] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -323,6 +325,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onOpenLoginModal }) =>
         </button>
 
         <button
+          id="btn-subtab-referral"
+          onClick={() => {
+            soundFx.playClick();
+            setActiveSubTab('REFERRAL');
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activeSubTab === 'REFERRAL'
+              ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20'
+              : 'bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800'
+          }`}
+        >
+          <Gift className="w-4 h-4 text-amber-400" />
+          <span>Refer & Earn (₹25)</span>
+        </button>
+
+        <button
           id="btn-subtab-passport"
           onClick={() => {
             soundFx.playClick();
@@ -393,6 +411,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onOpenLoginModal }) =>
       {/* Tab Content 1: Wallet & Payouts */}
       {activeSubTab === 'WALLET' && (
         <WalletSection />
+      )}
+
+      {/* Tab Content: Refer & Earn */}
+      {activeSubTab === 'REFERRAL' && (
+        <ReferralSection />
       )}
 
       {/* Tab Content: Pro Player Passport Card */}

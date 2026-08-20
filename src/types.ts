@@ -95,7 +95,7 @@ export interface Registration {
   captainPhone: string;
   captainEmail?: string;
   players: PlayerParticipant[];
-  paymentMethod: 'UPI_QR' | 'UPI_ID';
+  paymentMethod: 'UPI_QR' | 'UPI_ID' | 'WALLET';
   utrNumber: string;
   paymentScreenshotUrl?: string; // base64 or URL
   status: RegistrationStatus;
@@ -147,6 +147,21 @@ export interface WithdrawalRequest {
   adminRemarks?: string;
 }
 
+export interface ReferralRecord {
+  id: string;
+  referrerUid: string;
+  referrerName: string;
+  referrerPhone?: string;
+  referredUserUid: string;
+  referredUserName: string;
+  referredUserPhone?: string;
+  status: 'REGISTERED' | 'QUALIFIED' | 'REWARDED';
+  rewardAmount: number;
+  createdAt: string;
+  qualifiedAt?: string;
+  qualificationReason?: 'DEPOSIT' | 'MATCH_PLAYED';
+}
+
 export type WalletTransactionType = 
   | 'DEPOSIT' 
   | 'PRIZE_WON' 
@@ -155,6 +170,9 @@ export type WalletTransactionType =
   | 'ADMIN_CREDIT'
   | 'ADMIN_DEBIT'
   | 'BONUS'
+  | 'SIGNUP_BONUS'
+  | 'REFERRAL_BONUS'
+  | 'MATCH_ENTRY_FEE'
   | 'MANUAL_ADJUSTMENT'
   | 'PENALTY';
 
@@ -250,6 +268,19 @@ export interface AuthPlayerProfile {
   gameUid?: string;
   photoURL?: string;
   role: 'USER' | 'ADMIN';
+  walletBalance?: number;
+  depositBalance?: number;
+  winningsBalance?: number;
+  bonusBalance?: number;
+  totalDepositAmount?: number;
+  totalWonAmount?: number;
+  referralCode?: string;
+  referredBy?: string;
+  referralEarnings?: number;
+  referralsCount?: number;
+  hasDeposited?: boolean;
+  hasPlayedMatch?: boolean;
+  status?: 'ACTIVE' | 'BANNED';
   createdAt: string;
 }
 
@@ -323,6 +354,18 @@ export interface UpiAppConfig {
   order: number;
 }
 
+export interface BgmConfig {
+  enabled: boolean;
+  autoplay: boolean;
+  volume: number; // 0.05 to 1.0 (e.g. 0.15 for subtle background sound)
+  trackTitle: string;
+  trackUrl: string;
+  loop: boolean;
+  presetId?: 'default_ff_anthem' | 'cyberpunk_rush' | 'lofi_chill' | 'victory_orchestra' | 'custom';
+  fileSize?: string;
+  fileName?: string;
+}
+
 export interface AdminSettings {
   appLogo?: string;
   upiId: string;
@@ -339,10 +382,18 @@ export interface AdminSettings {
   heroSlides?: SlideItem[];
   promoBanners?: PromoBanner[];
   upiApps?: UpiAppConfig[];
+  bgmConfig?: BgmConfig;
   autoEmailNotifications?: boolean;
   emailSenderName?: string;
   emailCustomFooterNote?: string;
   slotDisplayMode?: 'AUTO_REAL' | 'MANUAL';
+  tutorialVideoUrl?: string;
+  loginTutorialVideoUrl?: string;
+  referralRewardAmount?: number; // e.g. ₹25
+  signupBonusAmount?: number; // e.g. ₹20
+  minDepositAmount?: number; // e.g. ₹20
+  minWithdrawalAmount?: number; // e.g. ₹50
+  bonusUnlockWinningTarget?: number; // e.g. ₹200
   smtpConfig?: {
     host?: string;
     port?: number;
@@ -352,3 +403,19 @@ export interface AdminSettings {
     fromEmail?: string;
   };
 }
+
+export interface ReferralRecord {
+  id: string;
+  referrerUid: string;
+  referrerName: string;
+  referrerPhone?: string;
+  referredUserUid: string;
+  referredUserName: string;
+  referredUserPhone?: string;
+  status: 'REGISTERED' | 'QUALIFIED' | 'REWARDED';
+  rewardAmount: number;
+  createdAt: string;
+  qualifiedAt?: string;
+  qualificationReason?: 'DEPOSIT' | 'MATCH_PLAYED';
+}
+

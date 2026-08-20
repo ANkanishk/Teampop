@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="popGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ea580c" />
+      <stop offset="50%" stop-color="#f97316" />
+      <stop offset="100%" stop-color="#dc2626" />
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181b" />
+      <stop offset="100%" stop-color="#09090b" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" stroke="#27272a" stroke-width="8" />
+  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#popGrad)" stroke-width="12" stroke-dasharray="16 8" />
+  <path d="M170 360 V152 H260 C300 152 330 178 330 216 C330 254 300 280 260 280 H216 V360 Z" fill="url(#popGrad)" />
+  <path d="M216 194 V238 H256 C272 238 284 228 284 216 C284 204 272 194 256 194 Z" fill="#09090b" />
+  <polygon points="340,360 380,280 420,360" fill="#22c55e" />
+</svg>

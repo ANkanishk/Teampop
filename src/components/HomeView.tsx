@@ -30,6 +30,7 @@ import { INITIAL_SLIDES, GAME_MODES, getPerKillReward, calculateBRPlacementRewar
 import { Match, GameModeId } from '../types';
 import { PromoCarousel } from './PromoCarousel';
 import { TopKillersWidget } from './TopKillersWidget';
+import { HowToPlayVideoGuide } from './HowToPlayVideoGuide';
 
 interface HomeViewProps {
   onSelectMatch: (match: Match) => void;
@@ -95,7 +96,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const playerUid = customUser?.gameUid || 'N/A';
 
   return (
-    <div id="home-view" className="space-y-8 sm:space-y-12 pb-16">
+    <div id="home-view" className="space-y-6 sm:space-y-10 pb-16">
+      {/* Video Guide - Top of Home Lobby */}
+      <HowToPlayVideoGuide videoType="general" />
+
       {/* Dedicated Player Account & Login Quick Bar */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}

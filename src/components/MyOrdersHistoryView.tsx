@@ -219,7 +219,7 @@ export const MyOrdersHistoryView: React.FC<MyOrdersHistoryViewProps> = ({ onOpen
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {activeRegistrations.map((reg) => {
                 const match = matches.find((m) => m.id === reg.matchId);
-                const hasRoomCredentials = match?.roomId && match.status !== 'REGISTRATION_OPEN';
+                const hasRoomCredentials = Boolean(match?.roomId && match.roomId.trim() !== '');
 
                 return (
                   <div

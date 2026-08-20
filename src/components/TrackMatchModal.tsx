@@ -210,7 +210,7 @@ export const TrackMatchModal: React.FC<TrackMatchModalProps> = ({
                 </div>
 
                 {searchedReg.status === 'APPROVED' ? (
-                  matchedMatch?.credentialsReleased && matchedMatch.roomId ? (
+                  matchedMatch?.roomId ? (
                     <div className="space-y-2.5 bg-neutral-900 p-3.5 rounded-xl border border-neutral-700">
                       <div className="flex justify-between items-center">
                         <div>

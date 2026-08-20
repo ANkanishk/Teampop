@@ -77,6 +77,16 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   announcementTicker: '🔥 POP GAMING SEASON 9 LIVE: Daily BR Solo & Squad Rooms every 30 mins! Instant UPI Reward settlement within 15 minutes of match completion. Register now!',
   platformCharge: 0,
   upiApps: INITIAL_UPI_APPS,
+  bgmConfig: {
+    enabled: true,
+    autoplay: true,
+    volume: 0.15,
+    trackTitle: 'Free Fire Esports Lobby Anthem (Default)',
+    trackUrl: '/audio/free-fire-lobby-theme.mp3',
+    loop: true,
+    presetId: 'default_ff_anthem',
+    fileName: 'free_fire_lobby_anthem.mp3',
+  },
 };
 
 export const GAME_MODES: GameModeInfo[] = [
